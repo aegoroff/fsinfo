@@ -1,24 +1,44 @@
 const std = @import("std");
+const clap = @import("clap");
 
 pub fn main() !void {
-    // Prints to stderr (it's a shortcut based on `std.io.getStdErr()`)
-    std.debug.print("All your {s} are belong to us.\n", .{"codebase"});
-
     // stdout is for the actual output of your application, for example if you
     // are implementing gzip, then only the compressed bytes should be sent to
     // stdout, not any debugging messages.
-    const stdout_file = std.io.getStdOut().writer();
-    var bw = std.io.bufferedWriter(stdout_file);
-    const stdout = bw.writer();
+    const stdout = std.io.getStdOut().writer();
 
-    try stdout.print("Run `zig build test` to run the tests.\n", .{});
+    const params = comptime clap.parseParamsComptime(
+        \\-h, --help             Display this help and exit.
+        \\-p, --path <str>        Path to walk.
+        \\
+    );
+    var diag = clap.Diagnostic{};
+    var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
+        .diagnostic = &diag,
+    }) catch |err| {
+        // Report useful error and exit
+        diag.report(stdout, err) catch {};
+        return err;
+    };
+    defer res.deinit();
 
-    try bw.flush(); // don't forget to flush!
-}
+    if (res.args.help != 0) {
+        return clap.help(stdout, clap.Help, &params, .{});
+    }
 
-test "simple test" {
-    var list = std.ArrayList(i32).init(std.testing.allocator);
-    defer list.deinit(); // try commenting this out and see if zig detects the memory leak!
-    try list.append(42);
-    try std.testing.expectEqual(@as(i32, 42), list.pop());
+    const allocator = std.heap.c_allocator;
+    const source = res.args.path orelse {
+        return clap.help(stdout, clap.Help, &params, .{});
+    };
+    var dir = try std.fs.openIterableDirAbsolute(source, .{});
+    var walker = try dir.walk(allocator);
+    defer walker.deinit();
+    while (true) {
+        var entry = try walker.next() orelse {
+            break;
+        };
+        if (entry.kind == std.fs.IterableDir.Entry.Kind.file) {
+            try stdout.print("{s}\n", .{entry.path});
+        }
+    }
 }
