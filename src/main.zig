@@ -26,15 +26,13 @@ pub fn main() !void {
         return clap.help(stdout, clap.Help, &params, .{});
     }
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-
-    const allocator = arena.allocator();
+    const allocator = std.heap.c_allocator;
     const source = res.args.path orelse {
         return clap.help(stdout, clap.Help, &params, .{});
     };
     var dir = try std.fs.openIterableDirAbsolute(source, .{});
     var walker = try dir.walk(allocator);
+    defer walker.deinit();
     var total_size: u64 = 0;
     var total_file_count: u64 = 0;
     var total_dir_count: u64 = 0;
