@@ -37,7 +37,10 @@ pub fn main() !void {
     var total_file_count: u64 = 0;
     var total_dir_count: u64 = 0;
     while (true) {
-        var entry = try walker.next() orelse {
+        var entry_or_null = walker.next() catch {
+            continue;
+        };
+        var entry = entry_or_null orelse {
             break;
         };
         switch (entry.kind) {
@@ -53,5 +56,6 @@ pub fn main() !void {
             else => {},
         }
     }
-    try stdout.print("Total files: {d}\nTotal directories: {d}\nTotal files size: {:.2}\n", .{ total_file_count, total_dir_count, std.fmt.fmtIntSizeBin(total_size) });
+    const print_args = .{ "Total files:", "Total directories:", "Total files size:", total_file_count, total_dir_count, std.fmt.fmtIntSizeBin(total_size) };
+    try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5:.2}\n", print_args);
 }
