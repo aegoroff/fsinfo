@@ -9,7 +9,7 @@ pub fn main() !void {
 
     const params = comptime clap.parseParamsComptime(
         \\-h, --help             Display this help and exit.
-        \\-p, --path <str>        Path to walk.
+        \\-p, --path <str>       Path to analyze.
         \\
     );
     var diag = clap.Diagnostic{};
