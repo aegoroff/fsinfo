@@ -14,6 +14,7 @@ pub fn build(b: *std.Build) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall. Here we do not
     // set a preferred release mode, allowing the user to decide how to optimize.
     const optimize = b.standardOptimizeOption(.{});
+    const arch: std.Target.Cpu.Arch = target.getCpuArch();
 
     const exe = b.addExecutable(.{
         .name = "walk",
@@ -25,6 +26,13 @@ pub fn build(b: *std.Build) void {
     });
     exe.linkLibC();
     exe.addAnonymousModule("clap", .{ .source_file = .{ .path = "libs/zig-clap/clap.zig" } });
+    if (arch.isX86()) {
+        exe.target.cpu_model = .{ .explicit = &std.Target.x86.cpu.haswell };
+    } else if (arch.isAARCH64() and target.isDarwin()) {
+        exe.target.cpu_model = .{ .explicit = &std.Target.aarch64.cpu.apple_m1 };
+    } else if (arch.isAARCH64() and target.isLinux()) {
+        exe.target.cpu_model = .{ .explicit = &std.Target.aarch64.cpu.generic };
+    }
 
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
