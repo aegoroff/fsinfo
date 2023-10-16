@@ -8,8 +8,8 @@ pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
 
     const params = comptime clap.parseParamsComptime(
-        \\-h, --help             Display this help and exit.
-        \\-p, --path <str>       Path to analyze.
+        \\-h, --help  Display this help and exit.
+        \\<str>       Path to analyze.
         \\
     );
     var diag = clap.Diagnostic{};
@@ -27,9 +27,11 @@ pub fn main() !void {
     }
 
     const allocator = std.heap.c_allocator;
-    const source = res.args.path orelse {
+
+    const source = if (res.positionals.len == 1) res.positionals[0] else {
         return clap.help(stdout, clap.Help, &params, .{});
     };
+
     var dir = try std.fs.openIterableDirAbsolute(source, .{});
     var walker = try dir.walk(allocator);
     defer walker.deinit();
