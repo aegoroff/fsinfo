@@ -36,6 +36,9 @@ pub fn main() !void {
     var total_size: u64 = 0;
     var total_file_count: u64 = 0;
     var total_dir_count: u64 = 0;
+    var progress = std.Progress{};
+    var files_progress = progress.start("Files", total_file_count);
+    var directories_progress = files_progress.start("Directories", total_dir_count);
     while (true) {
         var entry_or_null = walker.next() catch {
             continue;
@@ -48,13 +51,18 @@ pub fn main() !void {
                 const stat = try entry.dir.statFile(entry.basename);
                 total_size += stat.size;
                 total_file_count += 1;
+                files_progress.setCompletedItems(total_file_count);
             },
             std.fs.IterableDir.Entry.Kind.directory => {
                 total_dir_count += 1;
+                directories_progress.setCompletedItems(total_dir_count);
+                progress.maybeRefresh();
             },
             else => {},
         }
     }
+    files_progress.end();
+    directories_progress.end();
     const print_args = .{ "Total files:", "Total directories:", "Total files size:", total_file_count, total_dir_count, std.fmt.fmtIntSizeBin(total_size), total_size };
     try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5:.2} ({6} bytes)\n", print_args);
 }
