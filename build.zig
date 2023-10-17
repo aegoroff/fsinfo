@@ -28,6 +28,7 @@ pub fn build(b: *std.Build) void {
     exe.addAnonymousModule("clap", .{ .source_file = .{ .path = "libs/zig-clap/clap.zig" } });
     if (arch.isX86()) {
         exe.target.cpu_model = .{ .explicit = &std.Target.x86.cpu.haswell };
+        exe.disable_stack_probing = true;
     } else if (arch.isAARCH64() and target.isDarwin()) {
         exe.target.cpu_model = .{ .explicit = &std.Target.aarch64.cpu.apple_m1 };
     } else if (arch.isAARCH64() and target.isLinux()) {
