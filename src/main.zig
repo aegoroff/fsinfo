@@ -41,7 +41,7 @@ pub fn main() !void {
     var directories_progress = files_progress.start("Directories", total_dir_count);
     directories_progress.setUnit("");
     const portion_size = 1024;
-    var exclusions = StartsWithIterator{
+    var exclusions = StartsWith{
         .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
         .haystack = "",
     };
@@ -53,7 +53,7 @@ pub fn main() !void {
             break;
         };
         exclusions.haystack = entry.path;
-        if (exclusions.next() != null) {
+        if (exclusions.probe()) {
             continue;
         }
         switch (entry.kind) {
@@ -79,36 +79,36 @@ pub fn main() !void {
     try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5:.2} ({6} bytes)\n", print_args);
 }
 
-const StartsWithIterator = struct {
+const StartsWith = struct {
     needles: []const []const u8,
     haystack: []const u8,
     index: usize = 0,
-    fn next(self: *StartsWithIterator) ?[]const u8 {
+    fn probe(self: *StartsWith) bool {
         const index = self.index;
         for (self.needles[index..]) |needle| {
             self.index += 1;
             if (std.mem.startsWith(u8, self.haystack, needle)) {
-                return needle;
+                return true;
             }
         }
-        return null;
+        return false;
     }
 };
 
 test "starts match" {
-    var iter = StartsWithIterator{
+    var iter = StartsWith{
         .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
         .haystack = "/proc/1",
     };
 
-    try std.testing.expect(iter.next() != null);
+    try std.testing.expect(iter.probe());
 }
 
 test "starts not match" {
-    var iter = StartsWithIterator{
+    var iter = StartsWith{
         .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
         .haystack = "/usr/local",
     };
 
-    try std.testing.expect(iter.next() == null);
+    try std.testing.expect(!iter.probe());
 }
