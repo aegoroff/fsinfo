@@ -41,6 +41,10 @@ pub fn main() !void {
     var directories_progress = files_progress.start("Directories", total_dir_count);
     directories_progress.setUnit("");
     const portion_size = 1024;
+    var exclusions = StartsWithIterator{
+        .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
+        .haystack = "",
+    };
     while (true) {
         var entry_or_null = walker.next() catch {
             continue;
@@ -48,6 +52,10 @@ pub fn main() !void {
         var entry = entry_or_null orelse {
             break;
         };
+        exclusions.haystack = entry.path;
+        if (exclusions.next() != null) {
+            continue;
+        }
         switch (entry.kind) {
             std.fs.IterableDir.Entry.Kind.file => {
                 const stat = try entry.dir.statFile(entry.basename);
@@ -69,4 +77,38 @@ pub fn main() !void {
     directories_progress.end();
     const print_args = .{ "Total files:", "Total directories:", "Total files size:", total_file_count, total_dir_count, std.fmt.fmtIntSizeBin(total_size), total_size };
     try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5:.2} ({6} bytes)\n", print_args);
+}
+
+const StartsWithIterator = struct {
+    needles: []const []const u8,
+    haystack: []const u8,
+    index: usize = 0,
+    fn next(self: *StartsWithIterator) ?[]const u8 {
+        const index = self.index;
+        for (self.needles[index..]) |needle| {
+            self.index += 1;
+            if (std.mem.startsWith(u8, self.haystack, needle)) {
+                return needle;
+            }
+        }
+        return null;
+    }
+};
+
+test "starts match" {
+    var iter = StartsWithIterator{
+        .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
+        .haystack = "/proc/1",
+    };
+
+    try std.testing.expect(iter.next() != null);
+}
+
+test "starts not match" {
+    var iter = StartsWithIterator{
+        .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
+        .haystack = "/usr/local",
+    };
+
+    try std.testing.expect(iter.next() == null);
 }
