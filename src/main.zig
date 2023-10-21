@@ -41,7 +41,7 @@ pub fn main() !void {
     var directories_progress = files_progress.start("Directories", total_dir_count);
     directories_progress.setUnit("");
     const portion_size = 1024;
-    var exclusions = StartsWith{
+    var exclusions = Exlusions{
         .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
         .haystack = "",
     };
@@ -79,11 +79,11 @@ pub fn main() !void {
     try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5:.2} ({6} bytes)\n", print_args);
 }
 
-const StartsWith = struct {
+const Exlusions = struct {
     needles: []const []const u8,
     haystack: []const u8,
     index: usize = 0,
-    fn probe(self: *StartsWith) bool {
+    fn probe(self: *Exlusions) bool {
         const index = self.index;
         for (self.needles[index..]) |needle| {
             self.index += 1;
@@ -96,7 +96,7 @@ const StartsWith = struct {
 };
 
 test "starts match" {
-    var iter = StartsWith{
+    var iter = Exlusions{
         .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
         .haystack = "/proc/1",
     };
@@ -105,7 +105,7 @@ test "starts match" {
 }
 
 test "starts not match" {
-    var iter = StartsWith{
+    var iter = Exlusions{
         .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
         .haystack = "/usr/local",
     };
