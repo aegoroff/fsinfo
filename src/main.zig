@@ -95,7 +95,7 @@ const Exlusions = struct {
     }
 };
 
-test "starts match" {
+test "exclusions match" {
     var iter = Exlusions{
         .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
         .haystack = "/proc/1",
@@ -104,7 +104,7 @@ test "starts match" {
     try std.testing.expect(iter.probe());
 }
 
-test "starts not match" {
+test "exclusions not match" {
     var iter = Exlusions{
         .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
         .haystack = "/usr/local",
