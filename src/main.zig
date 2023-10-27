@@ -41,9 +41,8 @@ pub fn main() !void {
     var directories_progress = files_progress.start("Directories", total_dir_count);
     directories_progress.setUnit("");
     const portion_size = 1024;
-    var exclusions = Exlusions{
-        .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
-        .haystack = "",
+    const exclusions = Exlusions{
+        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
     };
     while (true) {
         var entry_or_null = walker.next() catch {
@@ -52,8 +51,7 @@ pub fn main() !void {
         var entry = entry_or_null orelse {
             break;
         };
-        exclusions.haystack = entry.path;
-        if (exclusions.probe()) {
+        if (exclusions.probe(entry.path)) {
             continue;
         }
         switch (entry.kind) {
@@ -80,14 +78,10 @@ pub fn main() !void {
 }
 
 const Exlusions = struct {
-    needles: []const []const u8,
-    haystack: []const u8,
-    index: usize = 0,
-    fn probe(self: *Exlusions) bool {
-        const index = self.index;
-        for (self.needles[index..]) |needle| {
-            self.index += 1;
-            if (std.mem.startsWith(u8, self.haystack, needle)) {
+    haystack: []const []const u8,
+    fn probe(self: *const Exlusions, needle: []const u8) bool {
+        for (self.haystack) |try_needle| {
+            if (std.mem.startsWith(u8, needle, try_needle)) {
                 return true;
             }
         }
@@ -95,20 +89,26 @@ const Exlusions = struct {
     }
 };
 
-test "exclusions match" {
+test "exclusions match first" {
     var iter = Exlusions{
-        .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
-        .haystack = "/proc/1",
+        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
     };
 
-    try std.testing.expect(iter.probe());
+    try std.testing.expect(iter.probe("/proc/1"));
+}
+
+test "exclusions match not first" {
+    var iter = Exlusions{
+        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
+    };
+
+    try std.testing.expect(iter.probe("/dev/null"));
 }
 
 test "exclusions not match" {
     var iter = Exlusions{
-        .needles = &[_][]const u8{ "/proc", "/dev", "/sys" },
-        .haystack = "/usr/local",
+        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
     };
 
-    try std.testing.expect(!iter.probe());
+    try std.testing.expect(!iter.probe("/usr/local"));
 }
