@@ -105,6 +105,14 @@ test "exclusions match not first" {
     try std.testing.expect(iter.probe("/dev/null"));
 }
 
+test "exclusions match exact" {
+    var iter = Exlusions{
+        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
+    };
+
+    try std.testing.expect(iter.probe("/dev"));
+}
+
 test "exclusions not match" {
     var iter = Exlusions{
         .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
