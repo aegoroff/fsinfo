@@ -80,8 +80,8 @@ pub fn main() !void {
 const Exlusions = struct {
     haystack: []const []const u8,
     fn probe(self: *const Exlusions, needle: []const u8) bool {
-        for (self.haystack) |try_needle| {
-            if (std.mem.startsWith(u8, needle, try_needle)) {
+        for (self.haystack) |prefix| {
+            if (std.mem.startsWith(u8, needle, prefix)) {
                 return true;
             }
         }
