@@ -61,7 +61,9 @@ pub fn main() !void {
                 total_file_count += 1;
             },
             std.fs.IterableDir.Entry.Kind.directory => {
-                total_dir_count += 1;
+                if (!std.mem.eql(u8, entry.basename, ".")) {
+                    total_dir_count += 1;
+                }
             },
             else => {},
         }
