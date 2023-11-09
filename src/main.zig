@@ -56,9 +56,11 @@ pub fn main() !void {
         }
         switch (entry.kind) {
             std.fs.IterableDir.Entry.Kind.file => {
-                const stat = try entry.dir.statFile(entry.basename);
-                total_size += stat.size;
                 total_file_count += 1;
+                const stat = entry.dir.statFile(entry.basename) catch {
+                    continue;
+                };
+                total_size += stat.size;
             },
             std.fs.IterableDir.Entry.Kind.directory => {
                 total_dir_count += 1;
