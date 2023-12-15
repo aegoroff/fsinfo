@@ -81,9 +81,10 @@ pub fn main() !void {
 
 const Exlusions = struct {
     haystack: []const []const u8,
-    fn probe(self: *const Exlusions, needle: []const u8) bool {
+    /// Probes `path` to be excluded from scanning
+    fn probe(self: *const Exlusions, path: []const u8) bool {
         for (self.haystack) |prefix| {
-            if (std.mem.startsWith(u8, needle, prefix)) {
+            if (std.mem.startsWith(u8, path, prefix)) {
                 return true;
             }
         }
