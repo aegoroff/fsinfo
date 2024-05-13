@@ -10,8 +10,10 @@ pub fn main() !void {
         \\
     );
     var diag = clap.Diagnostic{};
+    const allocator = std.heap.c_allocator;
     var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
         .diagnostic = &diag,
+        .allocator = allocator,
     }) catch |err| {
         // Report useful error and exit
         diag.report(stdout, err) catch {};
@@ -23,13 +25,11 @@ pub fn main() !void {
         return clap.help(stdout, clap.Help, &params, .{});
     }
 
-    const allocator = std.heap.c_allocator;
-
     const source = if (res.positionals.len == 1) res.positionals[0] else {
         return clap.help(stdout, clap.Help, &params, .{});
     };
 
-    var dir = try std.fs.openIterableDirAbsolute(source, .{});
+    var dir = try std.fs.openDirAbsolute(source, .{ .iterate = true });
     var walker = try dir.walk(allocator);
     defer walker.deinit();
     var total_size: u64 = 0;
@@ -45,7 +45,7 @@ pub fn main() !void {
         .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
     };
     while (true) {
-        var entry_or_null = walker.next() catch {
+        const entry_or_null = walker.next() catch {
             continue;
         };
         var entry = entry_or_null orelse {
@@ -55,14 +55,14 @@ pub fn main() !void {
             continue;
         }
         switch (entry.kind) {
-            std.fs.IterableDir.Entry.Kind.file => {
+            std.fs.Dir.Entry.Kind.file => {
                 total_file_count += 1;
                 const stat = entry.dir.statFile(entry.basename) catch {
                     continue;
                 };
                 total_size += stat.size;
             },
-            std.fs.IterableDir.Entry.Kind.directory => {
+            std.fs.Dir.Entry.Kind.directory => {
                 total_dir_count += 1;
             },
             else => {},
