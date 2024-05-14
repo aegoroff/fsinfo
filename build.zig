@@ -31,7 +31,6 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("clap", clap_dep.module("clap"));
 
-    // exe.addAnonymousModule("clap", .{ .source_file = .{ .path = "libs/zig-clap/clap.zig" } });
     // if (arch.isX86()) {
     //     exe.target.cpu_model = .{ .explicit = &std.Target.x86.cpu.haswell };
     //     exe.disable_stack_probing = true;
