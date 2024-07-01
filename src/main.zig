@@ -37,7 +37,9 @@ pub fn main() !void {
     var total_dir_count: u64 = 0;
     var progress = std.Progress.start(.{});
     var directories_progress = progress.start("Directories", total_dir_count);
-    var files_progress = directories_progress.start("Files", total_file_count);
+    defer directories_progress.end();
+    var files_progress = progress.start("Files", total_file_count);
+    defer files_progress.end();
     const portion_size = 1024;
     const exclusions = Exlusions{
         .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
@@ -70,8 +72,7 @@ pub fn main() !void {
             directories_progress.setCompletedItems(total_dir_count);
         }
     }
-    files_progress.end();
-    directories_progress.end();
+
     const print_args = .{ "Total files:", "Total directories:", "Total files size:", total_file_count, total_dir_count, std.fmt.fmtIntSizeBin(total_size), total_size };
     try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5:.2} ({6} bytes)\n", print_args);
 }
