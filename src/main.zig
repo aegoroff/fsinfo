@@ -35,11 +35,9 @@ pub fn main() !void {
     var total_size: u64 = 0;
     var total_file_count: u64 = 0;
     var total_dir_count: u64 = 0;
-    var progress = std.Progress{};
-    var files_progress = progress.start("Files", total_file_count);
-    files_progress.setUnit("");
-    var directories_progress = files_progress.start("Directories", total_dir_count);
-    directories_progress.setUnit("");
+    var progress = std.Progress.start(.{});
+    var directories_progress = progress.start("Directories", total_dir_count);
+    var files_progress = directories_progress.start("Files", total_file_count);
     const portion_size = 1024;
     const exclusions = Exlusions{
         .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
@@ -70,7 +68,6 @@ pub fn main() !void {
         if (total_file_count > portion_size and total_file_count % portion_size == 0) {
             files_progress.setCompletedItems(total_file_count);
             directories_progress.setCompletedItems(total_dir_count);
-            progress.maybeRefresh();
         }
     }
     files_progress.end();
