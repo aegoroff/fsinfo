@@ -35,12 +35,10 @@ pub fn main() !void {
     var total_size: u64 = 0;
     var total_file_count: u64 = 0;
     var total_dir_count: u64 = 0;
-    var progress = std.Progress.start(.{ .estimated_total_items = 0, .root_name = "time, sec" });
-    defer progress.end();
+    var progress = std.Progress.start(.{ .estimated_total_items = 0, .root_name = "Time, sec" });
     var directories_progress = progress.start("Directories", total_dir_count);
-    defer directories_progress.end();
     var files_progress = progress.start("Files", total_file_count);
-    defer files_progress.end();
+
     const portion_size = 1024;
     const exclusions = Exlusions{
         .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
@@ -76,6 +74,9 @@ pub fn main() !void {
             progress.setCompletedItems(elapsed);
         }
     }
+    directories_progress.end();
+    files_progress.end();
+    progress.end();
 
     const elapsed = timer.read();
     const print_args = .{ "Total files:", "Total directories:", "Total files size:", total_file_count, total_dir_count, std.fmt.fmtIntSizeBin(total_size), total_size, "Time taken:", std.fmt.fmtDuration(elapsed) };
