@@ -35,7 +35,10 @@ pub fn main() !void {
     var total_size: u64 = 0;
     var total_file_count: u64 = 0;
     var total_dir_count: u64 = 0;
-    var progress = std.Progress.start(.{ .estimated_total_items = 0, .root_name = "Time, sec" });
+    var progress = std.Progress.start(.{
+        .estimated_total_items = 0,
+        .root_name = "Time, sec",
+    });
     var directories_progress = progress.start("Directories", total_dir_count);
     var files_progress = progress.start("Files", total_file_count);
 
@@ -79,7 +82,17 @@ pub fn main() !void {
     progress.end();
 
     const elapsed = timer.read();
-    const print_args = .{ "Total files:", "Total directories:", "Total files size:", total_file_count, total_dir_count, std.fmt.fmtIntSizeBin(total_size), total_size, "Time taken:", std.fmt.fmtDuration(elapsed) };
+    const print_args = .{
+        "Total files:",
+        "Total directories:",
+        "Total files size:",
+        total_file_count,
+        total_dir_count,
+        std.fmt.fmtIntSizeBin(total_size),
+        total_size,
+        "Time taken:",
+        std.fmt.fmtDuration(elapsed),
+    };
     try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5:.2} ({6} bytes)\n{7s:<19} {8}\n", print_args);
 }
 
