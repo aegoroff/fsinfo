@@ -35,7 +35,8 @@ pub fn main() !void {
     var total_size: u64 = 0;
     var total_file_count: u64 = 0;
     var total_dir_count: u64 = 0;
-    var progress = std.Progress.start(.{});
+    var progress = std.Progress.start(.{ .root_name = "Size", .estimated_total_items = 0 });
+    defer progress.end();
     var directories_progress = progress.start("Directories", total_dir_count);
     defer directories_progress.end();
     var files_progress = progress.start("Files", total_file_count);
@@ -70,6 +71,7 @@ pub fn main() !void {
         if (total_file_count > portion_size and total_file_count % portion_size == 0) {
             files_progress.setCompletedItems(total_file_count);
             directories_progress.setCompletedItems(total_dir_count);
+            progress.setCompletedItems(total_size);
         }
     }
 
