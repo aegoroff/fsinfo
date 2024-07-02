@@ -35,7 +35,7 @@ pub fn main() !void {
     var total_size: u64 = 0;
     var total_file_count: u64 = 0;
     var total_dir_count: u64 = 0;
-    var progress = std.Progress.start(.{ .root_name = "Size", .estimated_total_items = 0 });
+    var progress = std.Progress.start(.{ .root_name = "Size", .estimated_total_items = total_size });
     defer progress.end();
     var directories_progress = progress.start("Directories", total_dir_count);
     defer directories_progress.end();
