@@ -35,7 +35,7 @@ pub fn main() !void {
     var total_size: u64 = 0;
     var total_file_count: u64 = 0;
     var total_dir_count: u64 = 0;
-    var progress = std.Progress.start(.{ .root_name = "Size", .estimated_total_items = total_size });
+    var progress = std.Progress.start(.{ .estimated_total_items = 0, .root_name = "time, sec" });
     defer progress.end();
     var directories_progress = progress.start("Directories", total_dir_count);
     defer directories_progress.end();
@@ -45,6 +45,7 @@ pub fn main() !void {
     const exclusions = Exlusions{
         .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
     };
+    var timer = try std.time.Timer.start();
     while (true) {
         const entry_or_null = walker.next() catch {
             continue;
@@ -71,12 +72,14 @@ pub fn main() !void {
         if (total_file_count > portion_size and total_file_count % portion_size == 0) {
             files_progress.setCompletedItems(total_file_count);
             directories_progress.setCompletedItems(total_dir_count);
-            progress.setCompletedItems(total_size);
+            const elapsed = timer.read() / 1000000000;
+            progress.setCompletedItems(elapsed);
         }
     }
 
-    const print_args = .{ "Total files:", "Total directories:", "Total files size:", total_file_count, total_dir_count, std.fmt.fmtIntSizeBin(total_size), total_size };
-    try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5:.2} ({6} bytes)\n", print_args);
+    const elapsed = timer.read();
+    const print_args = .{ "Total files:", "Total directories:", "Total files size:", total_file_count, total_dir_count, std.fmt.fmtIntSizeBin(total_size), total_size, "Time taken:", std.fmt.fmtDuration(elapsed) };
+    try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5:.2} ({6} bytes)\n{7s:<19} {8}\n", print_args);
 }
 
 const Exlusions = struct {
