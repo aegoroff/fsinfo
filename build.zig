@@ -31,15 +31,6 @@ pub fn build(b: *std.Build) void {
     });
     exe.root_module.addImport("clap", clap_dep.module("clap"));
 
-    // if (arch.isX86()) {
-    //     exe.target.cpu_model = .{ .explicit = &std.Target.x86.cpu.haswell };
-    //     exe.disable_stack_probing = true;
-    // } else if (arch.isAARCH64() and target.isDarwin()) {
-    //     exe.target.cpu_model = .{ .explicit = &std.Target.aarch64.cpu.apple_m1 };
-    // } else if (arch.isAARCH64() and target.isLinux()) {
-    //     exe.target.cpu_model = .{ .explicit = &std.Target.aarch64.cpu.generic };
-    // }
-
     // This declares intent for the executable to be installed into the
     // standard location when the user invokes the "install" step (the default
     // step when running `zig build`).
