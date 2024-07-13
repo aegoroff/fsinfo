@@ -39,8 +39,8 @@ pub fn main() !void {
         .estimated_total_items = 0,
         .root_name = "Time, sec",
     });
-    var directories_progress = progress.start("Directories", total_dir_count);
-    var files_progress = progress.start("Files", total_file_count);
+    var directories_progress = progress.start("Directories", @intCast(total_dir_count));
+    var files_progress = progress.start("Files", @intCast(total_file_count));
 
     const portion_size = 1024;
     const exclusions = Exlusions{
@@ -71,10 +71,10 @@ pub fn main() !void {
             else => {},
         }
         if (total_file_count > portion_size and total_file_count % portion_size == 0) {
-            files_progress.setCompletedItems(total_file_count);
-            directories_progress.setCompletedItems(total_dir_count);
+            files_progress.setCompletedItems(@intCast(total_file_count));
+            directories_progress.setCompletedItems(@intCast(total_dir_count));
             const elapsed = timer.read() / 1000000000;
-            progress.setCompletedItems(elapsed);
+            progress.setCompletedItems(@intCast(elapsed));
         }
     }
     directories_progress.end();
