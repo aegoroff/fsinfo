@@ -29,7 +29,7 @@ pub fn main() !void {
         return clap.help(stdout, clap.Help, &params, .{});
     };
 
-    var dir = try std.fs.openDirAbsolute(source, .{ .iterate = true });
+    var dir = try std.fs.openDirAbsolute(source.?, .{ .iterate = true });
     var walker = try dir.walk(allocator);
     defer walker.deinit();
     var total_size: u64 = 0;

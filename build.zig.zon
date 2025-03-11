@@ -1,11 +1,12 @@
 .{
-    .name = "fsfinfo",
+    .name = .fsfinfo,
     .version = "0.1.0",
     .paths = .{"."},
+    .fingerprint = 0x403b56853b45a3c,
     .dependencies = .{
         .clap = .{
-            .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.9.0.tar.gz",
-            .hash = "12207ee987ce045596cb992cfb15b0d6d9456e50d4721c3061c69dabc2962053644d",
+            .url = "https://github.com/Hejsil/zig-clap/archive/refs/tags/0.10.0.tar.gz",
+            .hash = "clap-0.10.0-oBajB434AQBDh-Ei3YtoKIRxZacVPF1iSwp3IX_ZB8f0",
         },
     },
 }
