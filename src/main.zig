@@ -2,7 +2,12 @@ const std = @import("std");
 const clap = @import("clap");
 
 pub fn main() !void {
-    const stdout = std.io.getStdOut().writer();
+    var stdout_buffer: [1024]u8 = undefined;
+    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    const stdout = &stdout_writer.interface;
+    defer {
+        stdout.flush() catch {};
+    }
 
     const params = comptime clap.parseParamsComptime(
         \\-h, --help  Display this help and exit.
@@ -88,12 +93,11 @@ pub fn main() !void {
         "Total files size:",
         total_file_count,
         total_dir_count,
-        std.fmt.fmtIntSizeBin(total_size),
         total_size,
         "Time taken:",
-        std.fmt.fmtDuration(elapsed),
+        elapsed,
     };
-    try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5:.2} ({6} bytes)\n{7s:<19} {8}\n", print_args);
+    try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5Bi:.2} ({5} bytes)\n{6s:<19} {7D}\n", print_args);
 }
 
 const Exlusions = struct {
