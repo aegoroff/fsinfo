@@ -24,9 +24,9 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .target = target,
             .strip = optimize != .Debug,
+            .link_libc = true,
         }),
     });
-    exe.root_module.link_libc = true;
     const clap_dep = b.dependency("clap", .{
         .optimize = optimize,
         .target = target,
@@ -68,9 +68,9 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .optimize = optimize,
             .target = target,
+            .link_libc = true,
         }),
     });
-    unit_tests.root_module.link_libc = true;
     unit_tests.root_module.addImport("clap", clap_dep.module("clap"));
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
