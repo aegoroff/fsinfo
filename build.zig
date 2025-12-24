@@ -69,6 +69,8 @@ pub fn build(b: *std.Build) void {
             .target = target,
         }),
     });
+    unit_tests.linkLibC();
+    unit_tests.root_module.addImport("clap", clap_dep.module("clap"));
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
 

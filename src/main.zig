@@ -100,3 +100,7 @@ pub fn main() !void {
     };
     try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5Bi:.2} ({5} bytes)\n{6s:<19} {7D}\n", print_args);
 }
+
+test {
+    @import("std").testing.refAllDecls(@This());
+}
