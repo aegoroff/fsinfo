@@ -1,5 +1,6 @@
 const std = @import("std");
 const clap = @import("clap");
+const lib = @import("lib.zig");
 
 pub fn main() !void {
     var stdout_buffer: [1024]u8 = undefined;
@@ -48,7 +49,7 @@ pub fn main() !void {
     var files_progress = progress.start("Files", @intCast(total_file_count));
 
     const portion_size = 1024;
-    const exclusions = Exlusions{
+    const exclusions = lib.Exlusions{
         .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
     };
     var timer = try std.time.Timer.start();
@@ -98,49 +99,4 @@ pub fn main() !void {
         elapsed,
     };
     try stdout.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5Bi:.2} ({5} bytes)\n{6s:<19} {7D}\n", print_args);
-}
-
-const Exlusions = struct {
-    haystack: []const []const u8,
-    /// Probes `path` to be excluded from scanning
-    fn probe(self: *const Exlusions, path: []const u8) bool {
-        for (self.haystack) |prefix| {
-            if (std.mem.startsWith(u8, path, prefix)) {
-                return true;
-            }
-        }
-        return false;
-    }
-};
-
-test "exclusions match first" {
-    var iter = Exlusions{
-        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
-    };
-
-    try std.testing.expect(iter.probe("/proc/1"));
-}
-
-test "exclusions match not first" {
-    var iter = Exlusions{
-        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
-    };
-
-    try std.testing.expect(iter.probe("/dev/null"));
-}
-
-test "exclusions match exact" {
-    var iter = Exlusions{
-        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
-    };
-
-    try std.testing.expect(iter.probe("/dev"));
-}
-
-test "exclusions not match" {
-    var iter = Exlusions{
-        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
-    };
-
-    try std.testing.expect(!iter.probe("/usr/local"));
 }
