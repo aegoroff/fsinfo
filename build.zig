@@ -23,6 +23,7 @@ pub fn build(b: *std.Build) void {
             .root_source_file = b.path("src/main.zig"),
             .optimize = optimize,
             .target = target,
+            .strip = optimize != .Debug,
         }),
     });
     exe.linkLibC();
