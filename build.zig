@@ -26,7 +26,7 @@ pub fn build(b: *std.Build) void {
             .strip = optimize != .Debug,
         }),
     });
-    exe.linkLibC();
+    exe.root_module.link_libc = true;
     const clap_dep = b.dependency("clap", .{
         .optimize = optimize,
         .target = target,
@@ -70,7 +70,7 @@ pub fn build(b: *std.Build) void {
             .target = target,
         }),
     });
-    unit_tests.linkLibC();
+    unit_tests.root_module.link_libc = true;
     unit_tests.root_module.addImport("clap", clap_dep.module("clap"));
 
     const run_unit_tests = b.addRunArtifact(unit_tests);
