@@ -1,5 +1,7 @@
 const std = @import("std");
-const clap = @import("clap");
+const yazap = @import("yazap");
+const builtin = @import("builtin");
+const build_options = @import("build_options");
 const lib = @import("lib.zig");
 
 pub fn main() !void {
@@ -10,30 +12,31 @@ pub fn main() !void {
         stdout.flush() catch {};
     }
 
-    const params = comptime clap.parseParamsComptime(
-        \\-h, --help  Display this help and exit.
-        \\<str>       Path to analyze.
-        \\
-    );
-    var diag = clap.Diagnostic{};
     const allocator = std.heap.c_allocator;
-    var res = clap.parse(clap.Help, &params, clap.parsers.default, .{
-        .diagnostic = &diag,
-        .allocator = allocator,
-    }) catch |err| {
-        // Report useful error and exit
-        diag.report(stdout, err) catch {};
-        return err;
-    };
-    defer res.deinit();
+    var arena = std.heap.ArenaAllocator.init(allocator);
+    defer arena.deinit();
+    const query = std.Target.Query.fromTarget(&builtin.target);
 
-    if (res.args.help != 0) {
-        return clap.help(stdout, clap.Help, &params, .{});
-    }
+    const app_descr_template =
+        \\Fsinfo {s} ({s}), a non-interactive file system information tool implemented in Zig
+        \\Copyright (C) 2025 Alexander Egorov. All rights reserved.
+    ;
+    const app_descr = try std.fmt.allocPrint(
+        allocator,
+        app_descr_template,
+        .{ build_options.version, @tagName(query.cpu_arch.?) },
+    );
 
-    const source = if (res.positionals.len == 1) res.positionals[0] else {
-        return clap.help(stdout, clap.Help, &params, .{});
-    };
+    var app = yazap.App.init(allocator, "fsinfo", app_descr);
+    defer app.deinit();
+
+    var root_cmd = app.rootCommand();
+    root_cmd.setProperty(.help_on_empty_args);
+    root_cmd.setProperty(.positional_arg_required);
+    try root_cmd.addArg(yazap.Arg.positional("PATH", "Path to analyze", null));
+
+    const matches = try app.parseProcess();
+    const source = matches.getSingleValue("PATH");
 
     var dir = try std.fs.openDirAbsolute(source.?, .{ .iterate = true });
     var walker = try dir.walk(allocator);
