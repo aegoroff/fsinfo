@@ -1,0 +1,252 @@
+name: CI Build
+
+env:
+  GITHUB_REF: "${{ github.ref }}"
+  APR_HOME16: ${{ github.workspace }}\APR\
+  RELEASE_DIR: artifacts
+  RELEASE_BIN: fsinfo
+  BUILD_CONFIGURATION: Release
+  WINDOWS_TARGET: x86_64-windows-gnu
+  MACOS_TARGET: x86_64-macos-none
+  MACOS_TARGET_AARCH64: aarch64-macos-none
+  LINUX_TARGET_MUSL: x86_64-linux-musl
+  LINUX_TARGET_MUSL_AARCH64: aarch64-linux-musl
+  RELEASER_VER: 0.14.0
+  CI_BUILD_NUMBER: ${{ github.run_number }}
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+    tags:
+      - "v*" # Run when tag matches v*, i.e. v1.0, v20.15.10
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  cross_build:
+
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [ aarch64-linux-musl, x86_64-linux-musl, x86_64-windows-gnu, x86_64-macos-none, aarch64-macos-none ]
+        include:
+          - target: x86_64-linux-musl
+            abi: musl
+            os: linux
+            arch: x86_64
+            processor: core2
+          - target: x86_64-windows-gnu
+            abi: gnu
+            os: windows
+            arch: x86_64
+            processor: core2
+          - target: x86_64-macos-none
+            abi: none
+            os: macos
+            arch: x86_64
+            processor: core2
+          - target: aarch64-linux-musl
+            abi: musl
+            os: linux
+            arch: aarch64
+            processor: ""
+          - target: aarch64-macos-none
+            abi: none
+            os: macos
+            arch: aarch64
+            processor: apple_m1
+
+
+    steps:
+      - uses: actions/checkout@v6
+      - name: Query version number
+        id: get_version
+        shell: bash
+        run: |
+          echo "using version tag ${GITHUB_REF:11}"
+          echo "version=${GITHUB_REF:11}" >> $GITHUB_OUTPUT
+      - name: Install Zig
+        uses: mlugg/setup-zig@v2
+        with:
+          version: 0.15.2
+      - name: Build
+        run: |
+          chmod +x ./linux_build_zig.sh
+          ./linux_build_zig.sh ${{ matrix.abi }} ${{ matrix.os }} ${{ matrix.arch }} "${{ steps.get_version.outputs.VERSION }}" ${{ matrix.processor }}
+        env:
+          GROK_VERSION: ${{ steps.get_version.outputs.VERSION }}
+      - name: Create artifact directory
+        run: mkdir ${{ env.RELEASE_DIR }}
+      - name: Packaging
+        run: cp -v ./zig-out/*.gz ./${{ env.RELEASE_DIR }}/
+      - uses: actions/upload-artifact@v6
+        with:
+          name: ${{ matrix.os }}_${{ matrix.abi }}_${{ matrix.arch }}
+          path: ./${{ env.RELEASE_DIR }}
+
+  generate-changelog:
+    name: Generate changelog
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    outputs:
+      release_body: ${{ steps.git-cliff.outputs.content }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Generate a changelog
+        uses: orhun/git-cliff-action@main
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: -vv --latest --strip header
+        env:
+          OUTPUT: CHANGES.md
+
+  release:
+    name: GitHub Release
+    needs: [ cross_build, generate-changelog ]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Query version number
+        id: get_version
+        shell: bash
+        run: |
+          echo "using version tag ${GITHUB_REF:11}"
+          echo "version=${GITHUB_REF:11}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          release_name: ${{ steps.get_version.outputs.VERSION }}
+          body: "${{ needs.generate-changelog.outputs.release_body }}"
+
+      - name: Download Linux aarch64 MUSL tarball
+        uses: actions/download-artifact@v7
+        with:
+          name: linux_musl_aarch64
+          path: linux_musl_aarch64
+
+      - name: Download Linux x86_64 MUSL tarball
+        uses: actions/download-artifact@v7
+        with:
+          name: linux_musl_x86_64
+          path: linux_musl_x86_64
+
+      - name: Download Windows zip
+        uses: actions/download-artifact@v7
+        with:
+          name: windows_gnu_x86_64
+          path: windows_gnu_x86_64
+
+      - name: Download x86_64 MacOS zip
+        uses: actions/download-artifact@v7
+        with:
+          name: macos_none_x86_64
+          path: macos_none_x86_64
+
+      - name: Download aarch64 MacOS zip
+        uses: actions/download-artifact@v7
+        with:
+          name: macos_none_aarch64
+          path: macos_none_aarch64
+
+      - name: Create fake Cargo.toml
+        run: |
+          cat >Cargo.toml <<EOL
+          [package]
+          name = "${{ env.RELEASE_BIN }}"
+          version = "${{ steps.get_version.outputs.VERSION }}"
+          description = "Regular expressions macro engine. GROK is a tool like UNIX grep on steroids"
+          authors = ["egoroff <egoroff@gmail.com>"]
+          homepage = "https://github.com/aegoroff/grok"
+          license = "MIT"
+          EOL
+
+      - name: Download Releaser
+        run: |
+          curl -L  -o releaser.tar.gz https://github.com/aegoroff/releaser/releases/download/${{ env.RELEASER_VER }}/releaser-${{ env.RELEASER_VER }}-x86_64-unknown-linux-musl.tar.gz
+          tar -xf releaser.tar.gz
+      - name: Create brew formula
+        run: ${{ github.workspace }}/releaser b -c . -b https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/ -l './linux_musl_x86_64/' -m './macos_none_x86_64/' -u ${{ env.RELEASE_BIN }}.rb
+      - name: Publish brew formula
+        uses: dmnemec/copy_file_to_another_repo_action@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.GH_TOKEN }}
+        with:
+          source_file: ${{ env.RELEASE_BIN }}.rb
+          destination_repo: 'aegoroff/homebrew-tap'
+          user_email: 'egoroff@email.com'
+          user_name: 'aegoroff'
+          commit_message: "release: ${{ steps.get_version.outputs.VERSION }}"
+
+      - name: Create scoop json
+        run: ${{ github.workspace }}/releaser s -c . -b https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/ -i './windows_gnu_x86_64/' -e ${{ env.RELEASE_BIN }}.exe -u ${{ env.RELEASE_BIN }}.json
+      - name: Publish scoop json
+        uses: dmnemec/copy_file_to_another_repo_action@main
+        env:
+          API_TOKEN_GITHUB: ${{ secrets.GH_TOKEN }}
+        with:
+          source_file: ${{ env.RELEASE_BIN }}.json
+          destination_repo: 'aegoroff/scoop-bucket'
+          user_email: 'egoroff@email.com'
+          user_name: 'aegoroff'
+          commit_message: "release: ${{ steps.get_version.outputs.VERSION }}"
+
+      - name: Release aarch64 Linux MUSL tarball
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./linux_musl_aarch64/${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.LINUX_TARGET_MUSL_AARCH64 }}.tar.gz
+          asset_content_type: application/gzip
+          asset_name: ${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.LINUX_TARGET_MUSL_AARCH64 }}.tar.gz
+
+      - name: Release x86_64 Linux MUSL tarball
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./linux_musl_x86_64/${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.LINUX_TARGET_MUSL }}.tar.gz
+          asset_content_type: application/gzip
+          asset_name: ${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.LINUX_TARGET_MUSL }}.tar.gz
+
+      - name: Release Windows zip
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./windows_gnu_x86_64/${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.WINDOWS_TARGET }}.tar.gz
+          asset_content_type: application/gzip
+          asset_name: ${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.WINDOWS_TARGET }}.tar.gz
+
+      - name: Release x86_64 MacOS tarball
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./macos_none_x86_64/${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.MACOS_TARGET }}.tar.gz
+          asset_content_type: application/gzip
+          asset_name: ${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.MACOS_TARGET }}.tar.gz
+
+      - name: Release aarch64 MacOS tarball
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./macos_none_aarch64/${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.MACOS_TARGET_AARCH64 }}.tar.gz
+          asset_content_type: application/gzip
+          asset_name: ${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.MACOS_TARGET_AARCH64 }}.tar.gz

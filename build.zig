@@ -59,4 +59,26 @@ pub fn build(b: *std.Build) void {
     // running the unit tests.
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&run_unit_tests.step);
+
+    const tr = target.result;
+    const tar_file = std.fmt.allocPrint(b.allocator, "{s}/fsinfo-{s}-{s}-{s}-{s}.tar.gz", .{
+        b.install_prefix,
+        version_opt,
+        @tagName(tr.cpu.arch),
+        @tagName(tr.os.tag),
+        @tagName(tr.abi),
+    }) catch "";
+
+    const zig_step = b.addSystemCommand(&.{
+        "tar",
+        "-czf", // c - create, z - gzip, f - file
+        tar_file,
+        "-C",
+        b.exe_dir,
+        ".",
+    });
+    zig_step.step.dependOn(b.getInstallStep());
+
+    const archive_step = b.step("archive", "Create a tar.gz archive of the build");
+    archive_step.dependOn(&zig_step.step);
 }
