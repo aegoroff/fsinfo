@@ -19,7 +19,7 @@ pub fn main() !void {
 
     const app_descr_template =
         \\Fsinfo {s} ({s}), a non-interactive file system information tool implemented in Zig
-        \\Copyright (C) 2025 Alexander Egorov. All rights reserved.
+        \\Copyright (C) 2025-2026 Alexander Egorov. All rights reserved.
     ;
     const app_descr = try std.fmt.allocPrint(
         allocator,
