@@ -14,8 +14,6 @@ pub fn main() !void {
     }
 
     const allocator = std.heap.c_allocator;
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
     const query = std.Target.Query.fromTarget(&builtin.target);
 
     const app_descr_template =
@@ -53,13 +51,13 @@ pub fn main() !void {
         const entry_or_null = walker.next() catch {
             continue;
         };
-        const entry = entry_or_null orelse {
+        var entry = entry_or_null orelse {
             break;
         };
         if (exclusions.probe(entry.path)) {
             continue;
         }
-        rep.update(entry);
+        rep.update(&entry);
     }
 }
 

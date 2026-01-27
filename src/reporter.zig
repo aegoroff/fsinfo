@@ -30,7 +30,7 @@ pub const Reporter = struct {
         };
     }
 
-    pub fn update(self: *Reporter, entry: std.fs.Dir.Walker.Entry) void {
+    pub fn update(self: *Reporter, entry: *std.fs.Dir.Walker.Entry) void {
         switch (entry.kind) {
             std.fs.Dir.Entry.Kind.file => {
                 self.total_file_count += 1;
