@@ -49,10 +49,11 @@ pub fn main() !void {
     var rep = try reporter.Reporter.init();
     defer rep.finish(stdout);
 
+    const cpu_count = try std.Thread.getCpuCount();
     var pool: std.Thread.Pool = undefined;
     try pool.init(.{
         .allocator = allocator,
-        .n_jobs = 4,
+        .n_jobs = cpu_count,
     });
     defer pool.deinit();
 
