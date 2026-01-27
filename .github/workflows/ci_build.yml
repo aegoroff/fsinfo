@@ -2,16 +2,9 @@ name: CI Build
 
 env:
   GITHUB_REF: "${{ github.ref }}"
-  APR_HOME16: ${{ github.workspace }}\APR\
   RELEASE_DIR: artifacts
   RELEASE_BIN: fsinfo
   BUILD_CONFIGURATION: Release
-  WINDOWS_TARGET: x86_64-windows-gnu
-  MACOS_TARGET: x86_64-macos-none
-  MACOS_TARGET_AARCH64: aarch64-macos-none
-  LINUX_TARGET_MUSL: x86_64-linux-musl
-  LINUX_TARGET_MUSL_AARCH64: aarch64-linux-musl
-  RELEASER_VER: 0.14.0
   CI_BUILD_NUMBER: ${{ github.run_number }}
 
 on:
@@ -22,15 +15,13 @@ on:
     tags:
       - "v*" # Run when tag matches v*, i.e. v1.0, v20.15.10
   pull_request:
-    branches: [ master ]
+    branches: [master]
 
 jobs:
   cross_build:
-
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        target: [ aarch64-linux-musl, x86_64-linux-musl, x86_64-windows-gnu, x86_64-macos-none, aarch64-macos-none ]
         include:
           - target: x86_64-linux-musl
             abi: musl
@@ -57,7 +48,6 @@ jobs:
             os: macos
             arch: aarch64
             processor: apple_m1
-
 
     steps:
       - uses: actions/checkout@v6
@@ -102,13 +92,13 @@ jobs:
         id: git-cliff
         with:
           config: cliff.toml
-          args: -vv --latest --strip header
+          args: --latest --strip header
         env:
           OUTPUT: CHANGES.md
 
   release:
     name: GitHub Release
-    needs: [ cross_build, generate-changelog ]
+    needs: [cross_build, generate-changelog]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -119,35 +109,10 @@ jobs:
           echo "using version tag ${GITHUB_REF:11}"
           echo "version=${GITHUB_REF:11}" >> $GITHUB_OUTPUT
 
-      - name: Download Linux aarch64 MUSL tarball
+      - name: Download artefacts
         uses: actions/download-artifact@v7
         with:
-          name: linux_musl_aarch64
-          path: linux_musl_aarch64
-
-      - name: Download Linux x86_64 MUSL tarball
-        uses: actions/download-artifact@v7
-        with:
-          name: linux_musl_x86_64
-          path: linux_musl_x86_64
-
-      - name: Download Windows zip
-        uses: actions/download-artifact@v7
-        with:
-          name: windows_gnu_x86_64
-          path: windows_gnu_x86_64
-
-      - name: Download x86_64 MacOS zip
-        uses: actions/download-artifact@v7
-        with:
-          name: macos_none_x86_64
-          path: macos_none_x86_64
-
-      - name: Download aarch64 MacOS zip
-        uses: actions/download-artifact@v7
-        with:
-          name: macos_none_aarch64
-          path: macos_none_aarch64
+          path: release
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -155,8 +120,4 @@ jobs:
           tag_name: ${{ steps.get_version.outputs.VERSION }}
           body: "${{ needs.generate-changelog.outputs.release_body }}"
           files: |
-            ./linux_musl_aarch64/${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.LINUX_TARGET_MUSL_AARCH64 }}.tar.gz
-            ./linux_musl_x86_64/${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.LINUX_TARGET_MUSL }}.tar.gz
-            ./windows_gnu_x86_64/${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.WINDOWS_TARGET }}.tar.gz
-            ./macos_none_x86_64/${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.MACOS_TARGET }}.tar.gz
-            ./macos_none_aarch64/${{ env.RELEASE_BIN }}-${{ steps.get_version.outputs.VERSION }}-${{ env.MACOS_TARGET_AARCH64 }}.tar.gz
+            ./release/**/*.tar.gz
