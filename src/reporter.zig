@@ -9,6 +9,7 @@ pub const Reporter = struct {
     directories_progress:  std.Progress.Node,
     files_progress:  std.Progress.Node,
     timer: std.time.Timer,
+    m: std.Thread.Mutex,
 
     pub fn init() !Reporter {
         var progress = std.Progress.start(.{
@@ -27,10 +28,13 @@ pub const Reporter = struct {
             .directories_progress = directories_progress,
             .files_progress = files_progress,
             .timer = timer,
+            .m = std.Thread.Mutex{},
         };
     }
 
-    pub fn update(self: *Reporter, entry: *std.fs.Dir.Walker.Entry) void {
+    pub fn update(self: *Reporter, entry: std.fs.Dir.Walker.Entry) void {
+        self.m.lock();
+        defer self.m.unlock();
         switch (entry.kind) {
             std.fs.Dir.Entry.Kind.file => {
                 self.total_file_count += 1;

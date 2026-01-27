@@ -49,18 +49,28 @@ pub fn main() !void {
     var rep = try reporter.Reporter.init();
     defer rep.finish(stdout);
 
+    var pool: std.Thread.Pool = undefined;
+    try pool.init(.{
+        .allocator = allocator,
+        .n_jobs = 4,
+    });
+    defer pool.deinit();
+
+    var wg: std.Thread.WaitGroup = .{};
+
     while (true) {
         const entry_or_null = walker.next() catch {
             continue;
         };
-        var entry = entry_or_null orelse {
+        const entry = entry_or_null orelse {
             break;
         };
         if (exclusions.probe(entry.path)) {
             continue;
         }
-        rep.update(&entry);
+        pool.spawnWg(&wg, reporter.Reporter.update, .{ &rep, entry });
     }
+    wg.wait();
 }
 
 test {
