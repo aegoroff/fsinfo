@@ -49,16 +49,6 @@ pub fn main() !void {
     var rep = try reporter.Reporter.init();
     defer rep.finish(stdout);
 
-    const cpu_count = try std.Thread.getCpuCount() / 2;
-    var pool: std.Thread.Pool = undefined;
-    try pool.init(.{
-        .allocator = allocator,
-        .n_jobs = @max(cpu_count, 2),
-    });
-    defer pool.deinit();
-
-    var wg: std.Thread.WaitGroup = .{};
-
     while (true) {
         const entry_or_null = walker.next() catch {
             continue;
@@ -69,9 +59,8 @@ pub fn main() !void {
         if (exclusions.probe(entry.path)) {
             continue;
         }
-        pool.spawnWg(&wg, reporter.Reporter.update, .{ &rep, entry });
+        rep.update(entry);
     }
-    wg.wait();
 }
 
 test {
