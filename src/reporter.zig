@@ -15,8 +15,8 @@ pub const Reporter = struct {
             .estimated_total_items = 0,
             .root_name = "Time, sec",
         });
-        const directories_progress = progress.start("Directories", @intCast(0));
-        const files_progress = progress.start("Files", @intCast(0));
+        const directories_progress = progress.start("Directories", 0);
+        const files_progress = progress.start("Files", 0);
         const timer = try std.time.Timer.start();
 
         return Reporter{
