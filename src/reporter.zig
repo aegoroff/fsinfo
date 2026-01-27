@@ -6,8 +6,8 @@ pub const Reporter = struct {
     total_file_count: u64,
     total_dir_count: u64,
     progress: std.Progress.Node,
-    directories_progress:  std.Progress.Node,
-    files_progress:  std.Progress.Node,
+    directories_progress: std.Progress.Node,
+    files_progress: std.Progress.Node,
     timer: std.time.Timer,
     m: std.Thread.Mutex,
 
