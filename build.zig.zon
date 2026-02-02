@@ -5,8 +5,8 @@
     .fingerprint = 0x403b56853b45a3c,
     .dependencies = .{
         .yazap = .{
-            .url = "git+https://github.com/prajwalch/yazap#a920616e3a6676362735a2f5ae195ec320f058fb",
-            .hash = "yazap-0.6.3-Z1t-Emb0AQD_SkYf4dz_nEmAh9oRKiu6nexSJMGK3wcf",
+            .url = "https://github.com/prajwalch/yazap/archive/refs/tags/0.7.0.tar.gz",
+            .hash = "yazap-0.7.0-Z1t-EjH4AQBTpC18eKV-K4K8b8Sl9KGrygK6iNqXDb4M",
         },
     },
 }

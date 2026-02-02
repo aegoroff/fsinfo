@@ -5,9 +5,9 @@ const build_options = @import("build_options");
 const lib = @import("lib.zig");
 const reporter = @import("reporter.zig");
 
-pub fn main() !void {
+pub fn main(init: std.process.Init) !void {
     var stdout_buffer: [1024]u8 = undefined;
-    var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
+    var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     const stdout = &stdout_writer.interface;
     defer {
         stdout.flush() catch {};
@@ -34,21 +34,21 @@ pub fn main() !void {
     root_cmd.setProperty(.positional_arg_required);
     try root_cmd.addArg(yazap.Arg.positional("PATH", "Path to analyze", null));
 
-    const matches = try app.parseProcess();
+    const matches = try app.parseProcess(init.io, init.minimal.args);
     const source = matches.getSingleValue("PATH");
 
-    var dir = try std.fs.openDirAbsolute(source.?, .{ .iterate = true });
+    var dir = try std.Io.Dir.openDirAbsolute(init.io, source.?, .{ .iterate = true });
     var walker = try dir.walk(allocator);
     defer walker.deinit();
 
     const exclusions = lib.Exlusions{
         .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
     };
-    var rep = try reporter.Reporter.init();
+    var rep = try reporter.Reporter.init(init.io);
     defer rep.finish(stdout);
 
     while (true) {
-        const entry_or_null = walker.next() catch {
+        const entry_or_null = walker.next(init.io) catch {
             continue;
         };
         var entry = entry_or_null orelse {

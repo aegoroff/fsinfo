@@ -9,9 +9,10 @@ pub const Reporter = struct {
     directories_progress: std.Progress.Node,
     files_progress: std.Progress.Node,
     timer: std.time.Timer,
+    io: std.Io,
 
-    pub fn init() !Reporter {
-        var progress = std.Progress.start(.{
+    pub fn init(io: std.Io) !Reporter {
+        var progress = std.Progress.start(io, .{
             .estimated_total_items = 0,
             .root_name = "Time, sec",
         });
@@ -27,19 +28,20 @@ pub const Reporter = struct {
             .directories_progress = directories_progress,
             .files_progress = files_progress,
             .timer = timer,
+            .io = io,
         };
     }
 
-    pub fn update(self: *Reporter, entry: *std.fs.Dir.Walker.Entry) void {
+    pub fn update(self: *Reporter, entry: *std.Io.Dir.Walker.Entry) void {
         switch (entry.kind) {
-            std.fs.Dir.Entry.Kind.file => {
+            std.Io.File.Kind.file => {
                 self.total_file_count += 1;
-                const stat = entry.dir.statFile(entry.basename) catch {
+                const stat = entry.dir.statFile(self.io, entry.basename, .{ .follow_symlinks = false }) catch {
                     return;
                 };
                 self.total_size += stat.size;
             },
-            std.fs.Dir.Entry.Kind.directory => {
+            std.Io.File.Kind.directory => {
                 self.total_dir_count += 1;
             },
             else => {},
