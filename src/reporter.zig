@@ -8,17 +8,16 @@ pub const Reporter = struct {
     progress: std.Progress.Node,
     directories_progress: std.Progress.Node,
     files_progress: std.Progress.Node,
-    timer: std.time.Timer,
+    start: std.Io.Timestamp,
     io: std.Io,
 
-    pub fn init(io: std.Io) !Reporter {
+    pub fn init(io: std.Io) Reporter {
         var progress = std.Progress.start(io, .{
             .estimated_total_items = 0,
             .root_name = "Time, sec",
         });
         const directories_progress = progress.start("Directories", 0);
         const files_progress = progress.start("Files", 0);
-        const timer = try std.time.Timer.start();
 
         return Reporter{
             .total_size = 0,
@@ -27,7 +26,7 @@ pub const Reporter = struct {
             .progress = progress,
             .directories_progress = directories_progress,
             .files_progress = files_progress,
-            .timer = timer,
+            .start = std.Io.Clock.real.now(io),
             .io = io,
         };
     }
@@ -49,8 +48,12 @@ pub const Reporter = struct {
         if (self.total_file_count > portion_size and self.total_file_count % portion_size == 0) {
             self.files_progress.setCompletedItems(@intCast(self.total_file_count));
             self.directories_progress.setCompletedItems(@intCast(self.total_dir_count));
-            const elapsed = self.timer.read() / 1000000000;
-            self.progress.setCompletedItems(@intCast(elapsed));
+
+            const end = std.Io.Clock.real.now(self.io);
+            const duration = self.start.durationTo(end);
+            const elapsed: usize = @intCast(duration.toSeconds());
+
+            self.progress.setCompletedItems(elapsed);
         }
     }
 
@@ -59,7 +62,10 @@ pub const Reporter = struct {
         self.files_progress.end();
         self.progress.end();
 
-        const elapsed = self.timer.read();
+        const end = std.Io.Clock.real.now(self.io);
+        const duration = self.start.durationTo(end);
+        const nanos: u64 = @intCast(duration.nanoseconds);
+
         const print_args = .{
             "Total files:",
             "Total directories:",
@@ -68,7 +74,7 @@ pub const Reporter = struct {
             self.total_dir_count,
             self.total_size,
             "Time taken:",
-            elapsed,
+            nanos,
         };
         writer.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5Bi:.2} ({5} bytes)\n{6s:<19} {7D}\n", print_args) catch {};
     }

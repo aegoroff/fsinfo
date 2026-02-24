@@ -44,7 +44,7 @@ pub fn main(init: std.process.Init) !void {
     const exclusions = lib.Exlusions{
         .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
     };
-    var rep = try reporter.Reporter.init(init.io);
+    var rep = reporter.Reporter.init(init.io);
     defer rep.finish(stdout);
 
     while (true) {
