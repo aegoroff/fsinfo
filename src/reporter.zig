@@ -64,7 +64,6 @@ pub const Reporter = struct {
 
         const end = std.Io.Clock.real.now(self.io);
         const duration = self.start.durationTo(end);
-        const nanos: u64 = @intCast(duration.nanoseconds);
 
         const print_args = .{
             "Total files:",
@@ -74,8 +73,9 @@ pub const Reporter = struct {
             self.total_dir_count,
             self.total_size,
             "Time taken:",
-            nanos,
         };
-        writer.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5Bi:.2} ({5} bytes)\n{6s:<19} {7D}\n", print_args) catch {};
+        writer.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5Bi:.2} ({5} bytes)\n{6s:<19} ", print_args) catch {};
+        duration.format(writer) catch {};
+        writer.print("\n", .{}) catch {};
     }
 };
