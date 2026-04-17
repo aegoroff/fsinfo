@@ -1,6 +1,5 @@
 [tools]
 zig = "0.16.0"
-"cargo:git-cliff" = "latest"
 
 [tasks."build:zig"]
 description = "Build project"
@@ -32,6 +31,3 @@ run = [
   """
 ]
 
-[tasks."changelog"]
-description = "Changelog generation using git-cliff"
-run = "git-cliff --latest --strip header --config cliff.toml --output CHANGES.md"

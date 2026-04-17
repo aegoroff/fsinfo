@@ -65,7 +65,6 @@ jobs:
           export ARCH="${{ matrix.arch }}"
           export CPU="${{ matrix.processor }}"
           export VERSION="${GITHUB_REF#refs/tags/v}"
-          [[ "$VERSION" == "$GITHUB_REF" ]] && VERSION="0.1.0-dev"
           
           mise run build:zig
 
@@ -84,21 +83,20 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     outputs:
-      release_body: ${{ steps.read-cliff.outputs.content }}
+      release_body: ${{ steps.git-cliff.outputs.content }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      
-      - uses: jdx/mise-action@v2
-      
-      - name: Run git-cliff via mise
-        run: mise run changelog
-        
-      - name: Read changelog for release
-        id: read-cliff
-        run: echo "content=$(cat CHANGES.md)" >> $GITHUB_OUTPUT
+      - name: Generate a changelog
+        uses: orhun/git-cliff-action@main
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: --latest --strip header
+        env:
+          OUTPUT: CHANGES.md
 
   release:
     name: GitHub Release
