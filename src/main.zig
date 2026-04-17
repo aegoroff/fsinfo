@@ -13,7 +13,7 @@ pub fn main(init: std.process.Init) !void {
         stdout.flush() catch {};
     }
 
-    const allocator = std.heap.c_allocator;
+    const allocator = init.gpa;
     const query = std.Target.Query.fromTarget(&builtin.target);
 
     const app_descr_template =
