@@ -51,7 +51,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-      
+      - name: Query version number
+        id: get_version
+        shell: bash
+        run: |
+          echo "using version tag ${GITHUB_REF:11}"
+          echo "version=${GITHUB_REF:11}" >> $GITHUB_OUTPUT
       - name: Install mise and tools
         uses: jdx/mise-action@v2
         with:
@@ -64,7 +69,7 @@ jobs:
           export OS="${{ matrix.os }}"
           export ARCH="${{ matrix.arch }}"
           export CPU="${{ matrix.processor }}"
-          export VERSION="${GITHUB_REF#refs/tags/v}"
+          export VERSION="${{ steps.get_version.outputs.VERSION }}"
           
           mise run build:zig
 
