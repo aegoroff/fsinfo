@@ -1,17 +1,25 @@
 # AGENTS.md
 
-Instructions for AI coding agents working in the **zget** repository.
+Instructions for AI coding agents working in the **fsinfo** repository.
 
 ## Project overview
 
-A non-interactive file system information tool implemented in Zig.
+A non-interactive file system information tool implemented in Zig. It walks a directory tree and reports file/directory counts, total size, and elapsed time. System paths `/proc`, `/dev`, and `/sys` are excluded from the scan.
 
 | Item | Value |
 |------|-------|
 | Language | Zig **0.16.0** (see `mise.toml`) |
 | CLI parsing | [yazap](https://github.com/prajwalch/yazap) 0.7.0 |
-| HTTP | `std.http.Client` via `src/transport.zig` |
 | License | MIT |
+
+### Source layout
+
+| File | Role |
+|------|------|
+| `src/main.zig` | CLI entry (`std.process.Init`), yazap args, walk loop |
+| `src/lib.zig` | Path exclusion helpers (`Exlusions`) |
+| `src/reporter.zig` | Progress + final stats output |
+| `build.zig` | Build, test, archive steps; pinned glibc for Linux-gnu |
 
 ## Build and run
 
@@ -24,20 +32,20 @@ zig build
 # Run tests
 zig build test
 
-# Run with arguments
-zig build run -- -O out.zip https://example.com/file.zip
+# Run with a path to analyze
+zig build run -- .
 
-# Release archive (tar.gz in zig-out/)
-zig build archive -Dversion=0.1.3
+# Release archive (tar.gz under zig-out/)
+zig build archive -Dversion=0.1.2
 
 # Cross-compile example
 zig build -Dtarget=x86_64-linux-musl -Doptimize=ReleaseFast
 ```
 
-Via **just** (wraps mise):
+Via **just** (uses mise for Zig):
 
 ```bash
-just build          # ReleaseFast, x86_64-linux-musl, version 0.1.3
+just build          # ReleaseFast, x86_64-linux-musl, core2, version 0.1.2
 just test
 ```
 
@@ -49,42 +57,48 @@ mise run build:zig
 
 Binary output: `zig-out/bin/fsinfo` (or custom prefix from `--prefix-exe-dir`).
 
+**Linux-gnu note:** `build.zig` pins glibc to 2.38 so Zig links its bundled CRT. Do not drop that pin without understanding the `.sframe` / system `crt1.o` issue documented in `build.zig`.
+
 ## Zig conventions for this repo
 
 - **Minimize scope.** Small, focused diffs. No drive-by refactors.
 - **Match existing style.** Follow patterns in existing `src/*.zig` modules for naming, error handling, and allocator use.
 - **Use std library first.** Avoid adding dependencies without discussion.
-- **I/O.** This codebase uses Zig 0.16 `std.Io` APIs (`init.io`, `std.Io.File`, `std.Io.Dir`, `std.Io.Clock`). Do not revert to pre-0.16 file APIs.
+- **I/O.** This codebase uses Zig 0.16 `std.Io` APIs (`init.io`, `std.Io.File`, `std.Io.Dir`, `std.Io.Clock`, `std.Io.Writer`). Do not revert to pre-0.16 file APIs.
 - **Comments.** Only for non-obvious logic; the code should read clearly on its own.
 - **Tests.** Add `test` blocks in the same file as the code under test. Run `zig build test` before finishing.
+- **Format.** Apply `zig fmt` to changed Zig files before finishing.
 
-## Code Style Guidelines
+## Code style
+
 - Follow Zig standard library conventions
-- Use snake_case for functions and variables
-- Use PascalCase for types and structs
-- Use SCREAMING_SNAKE_CASE for constants
+- `snake_case` for functions and variables; `PascalCase` for types; `SCREAMING_SNAKE_CASE` for constants
 - Prefer explicit error handling with `!` return types
-- Keep functions small and focused on single responsibility
-- Prefer gpa name for allocators in arguments
+- Keep functions small and focused on a single responsibility
+- Prefer `gpa` as the allocator parameter name
+- Prefer `init.gpa` / `init.io` from `std.process.Init` in `main` rather than inventing globals
 
-## Development Rules
+## Development rules
 
-### Before Making Changes
+### Before making changes
+
 1. Read existing code to understand patterns and conventions
 2. Check for existing tests related to modified functionality
-3. Ensure changes are compatible with existing API
+3. Keep changes compatible with the existing CLI (`fsinfo <PATH>`) unless the task changes it
 
-### When Writing Code
-1. Write idiomatic Zig code following std lib patterns
-2. Handle all errors explicitly - no silent failures
-3. Add tests for new functionality
+### When writing code
+
+1. Write idiomatic Zig following std lib patterns
+2. Handle errors explicitly — no silent failures (existing `catch {}` / `catch continue` in the walk path are intentional; do not broaden that pattern casually)
+3. Add tests for new functionality (AAA: Arrange, Act, Assert)
 4. Keep backward compatibility when possible
 
-### When Fixing Bugs
+### When fixing bugs
+
 1. Understand root cause before fixing
-2. Add regression test if missing
+2. Add a regression test if missing
 3. Check for similar issues in related code
-4. Verify fix doesn't break existing tests
+4. Verify the fix does not break existing tests
 
 ## Testing
 
@@ -92,9 +106,9 @@ Binary output: `zig-out/bin/fsinfo` (or custom prefix from `--prefix-exe-dir`).
 zig build test
 ```
 
-When adding features, prefer table-driven or focused unit tests over integration tests unless HTTP mocking is already in place.
+Prefer table-driven or focused unit tests (see `src/lib.zig`). Full-tree scans are for manual smoke checks, not default automated tests.
 
-CI runs tests only for `x86_64-linux-gnu/musl` builds (`mise.toml` task). Ensure tests pass on that target.
+CI runs tests only for `x86_64-linux` builds (`mise.toml` task). Ensure tests pass on that target.
 
 ## CI and releases
 
@@ -108,22 +122,22 @@ CI runs tests only for `x86_64-linux-gnu/musl` builds (`mise.toml` task). Ensure
 Follow [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```
-feat: redirects support added
-fix: speed calculation fixes
+feat: human-readable size in reporter
+fix: skip unreadable entries without aborting walk
 chore: readme corrected
 ci: migration to mise
 build: zig 0.16
-refactor: use arena from main init arg
+refactor: pass walker entry by reference
 ```
 
 - Do **not** commit unless explicitly asked.
 - Do **not** push or force-push without explicit request.
-- Keep PRs focused; describe what changed and how to verify (`zig build test`, manual download smoke test).
+- Keep PRs focused; describe what changed and how to verify (`zig build test`, manual `fsinfo .` smoke test).
 
 ## Security
 
 - Never commit secrets, tokens, or credentials.
-- Validate user-controlled paths; prefer existing `std.fs.path` helpers over ad-hoc string concatenation.
+- Treat user-supplied paths carefully; prefer `std.Io.Dir` / path helpers over ad-hoc string concatenation when opening or joining paths.
 
 ## What agents should avoid
 
@@ -132,6 +146,7 @@ refactor: use arena from main init arg
 - Changing `build.zig.zon` dependency hashes without fetching and verifying the new package.
 - Breaking cross-compilation targets listed in CI without updating the workflow.
 - Editing `README.md` or this file unless the task requires documentation updates.
+- Reintroducing multithreading for the walk without a clear, measured plan (previously rolled back).
 
 ## Verification checklist
 
@@ -139,13 +154,5 @@ Before considering a task done:
 
 1. `zig build` succeeds.
 2. `zig build test` passes.
-3. No new compiler warnings in ReleaseFast (CI default).
-
-## Important Notes
-- Always verify build passes before completing tasks
-- Run full test suite after significant changes
-- Follow existing code organization patterns
-- Write code comments only in English
-- Don't write trivial code comments
-- Write tests in AAA pattern - Arange, Act, Assert
-- Always apply zig fmt to final result
+3. Changed Zig sources are formatted with `zig fmt`.
+4. No new compiler warnings in ReleaseFast (CI default).
