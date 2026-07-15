@@ -11,7 +11,17 @@ pub fn main(init: std.process.Init) !void {
         stdout.flush() catch {};
     }
 
-    const opts = try cli.parse(init.gpa, init.io, init.minimal.args);
+    const opts = cli.parse(init.gpa, init.io, init.minimal.args) catch |err| {
+        if (err == error.InvalidJobs) {
+            var stderr_buffer: [256]u8 = undefined;
+            var stderr_writer = std.Io.File.stderr().writer(init.io, &stderr_buffer);
+            const stderr = &stderr_writer.interface;
+            stderr.print("error: --jobs must be between 1 and {d}\n", .{cli.maxJobs()}) catch {};
+            stderr.flush() catch {};
+            std.process.exit(2);
+        }
+        return err;
+    };
     defer init.gpa.free(opts.path);
 
     // `openDir` accepts both absolute and relative PATH (e.g. `.`); absolute-only API asserts.

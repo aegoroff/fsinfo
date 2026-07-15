@@ -249,8 +249,11 @@ pub fn walkParallel(
 ) (std.mem.Allocator.Error || std.Io.ConcurrentError || std.Io.Dir.OpenError)!void {
     std.debug.assert(jobs >= 2);
 
+    const capacity = std.math.mul(usize, jobs, queue_slots_per_job) catch {
+        return error.OutOfMemory;
+    };
     var queue: DirQueue = .{
-        .capacity = jobs * queue_slots_per_job,
+        .capacity = capacity,
         .gpa = gpa,
     };
     defer queue.deinit(io);

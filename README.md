@@ -70,7 +70,7 @@ fsinfo [OPTIONS] <PATH>
 
 | Option | Description |
 |--------|-------------|
-| `-j`, `--jobs N` | Parallel directory-walk workers. Default: half the logical CPU count (at least 1). Use `-j 1` for single-threaded. |
+| `-j`, `--jobs N` | Parallel directory-walk workers. Default: half the logical CPU count (at least 1). Must be between 1 and 128 (or the CPU count if higher). Use `-j 1` for single-threaded. |
 
 ### Examples
 
