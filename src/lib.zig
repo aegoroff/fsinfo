@@ -1,10 +1,10 @@
 const std = @import("std");
 
-pub const Exlusions = struct {
+pub const Exclusions = struct {
     haystack: []const []const u8,
     /// Probes `path` to be excluded from scanning.
     /// `path` may be absolute or relative to the walk root (as from `Walker.Entry.path`).
-    pub fn probe(self: *const Exlusions, path: []const u8) bool {
+    pub fn probe(self: *const Exclusions, path: []const u8) bool {
         for (self.haystack) |prefix| {
             if (matchesExcludedPrefix(path, prefix)) {
                 return true;
@@ -31,57 +31,44 @@ fn matchesExcludedPrefix(path: []const u8, excluded: []const u8) bool {
     return std.fs.path.isSep(path_norm[excl_norm.len]);
 }
 
-test "exclusions match first" {
-    var iter = Exlusions{
-        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
+test "exclusions table" {
+    const haystack = [_][]const u8{ "/proc", "/dev", "/sys" };
+    const exclusions = Exclusions{ .haystack = &haystack };
+
+    const Case = struct {
+        path: []const u8,
+        excluded: bool,
+    };
+    const cases = [_]Case{
+        .{ .path = "/proc/1", .excluded = true },
+        .{ .path = "/dev/null", .excluded = true },
+        .{ .path = "/dev", .excluded = true },
+        .{ .path = "/sys/fs", .excluded = true },
+        .{ .path = "proc", .excluded = true },
+        .{ .path = "proc/1", .excluded = true },
+        .{ .path = "dev/null", .excluded = true },
+        .{ .path = "sys/fs", .excluded = true },
+        .{ .path = "/usr/local", .excluded = false },
+        .{ .path = "processing", .excluded = false },
+        .{ .path = "/processing", .excluded = false },
+        .{ .path = "device", .excluded = false },
+        .{ .path = "sysfoo", .excluded = false },
+        .{ .path = "usr/proc", .excluded = false },
     };
 
-    try std.testing.expect(iter.probe("/proc/1"));
+    for (cases) |case| {
+        try std.testing.expectEqual(case.excluded, exclusions.probe(case.path));
+    }
 }
 
-test "exclusions match not first" {
-    var iter = Exlusions{
-        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
+test "exclusions respect native path separators" {
+    const exclusions = Exclusions{
+        .haystack = &[_][]const u8{"proc"},
     };
-
-    try std.testing.expect(iter.probe("/dev/null"));
-}
-
-test "exclusions match exact" {
-    var iter = Exlusions{
-        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
-    };
-
-    try std.testing.expect(iter.probe("/dev"));
-}
-
-test "exclusions not match" {
-    var iter = Exlusions{
-        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
-    };
-
-    try std.testing.expect(!iter.probe("/usr/local"));
-}
-
-test "exclusions match walker relative paths" {
-    var iter = Exlusions{
-        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
-    };
-
-    try std.testing.expect(iter.probe("proc"));
-    try std.testing.expect(iter.probe("proc/1"));
-    try std.testing.expect(iter.probe("dev/null"));
-    try std.testing.expect(iter.probe("sys/fs"));
-}
-
-test "exclusions require path boundary" {
-    var iter = Exlusions{
-        .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },
-    };
-
-    try std.testing.expect(!iter.probe("processing"));
-    try std.testing.expect(!iter.probe("/processing"));
-    try std.testing.expect(!iter.probe("device"));
-    try std.testing.expect(!iter.probe("sysfoo"));
-    try std.testing.expect(!iter.probe("usr/proc"));
+    if (std.fs.path.sep == '/') {
+        try std.testing.expect(exclusions.probe("proc/1"));
+        try std.testing.expect(!exclusions.probe("proc\\1"));
+    } else {
+        try std.testing.expect(exclusions.probe("proc\\1"));
+    }
 }

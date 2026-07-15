@@ -17,7 +17,7 @@ A non-interactive file system information tool implemented in Zig. It walks a di
 | File | Role |
 |------|------|
 | `src/main.zig` | CLI entry (`std.process.Init`), yazap args, walk loop |
-| `src/lib.zig` | Path exclusion helpers (`Exlusions`) |
+| `src/lib.zig` | Path exclusion helpers (`Exclusions`) |
 | `src/reporter.zig` | Progress + final stats output |
 | `build.zig` | Build, test, archive steps; pinned glibc for Linux-gnu |
 

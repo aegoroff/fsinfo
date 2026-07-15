@@ -7,14 +7,14 @@ A non-interactive file system information tool implemented in Zig.
 `fsinfo` analyzes a given directory path and provides statistics about the file system:
 - Total number of files
 - Total number of directories
-- Total size of all files
+- Total size of all files (sum of sizes per directory entry; hard-linked names are counted separately)
 - Time taken for the analysis
 
-The tool automatically excludes system directories like `/proc`, `/dev`, and `/sys` during scanning and provides progress updates during the analysis.
+The tool automatically excludes system directories like `/proc`, `/dev`, and `/sys` during scanning and provides progress updates during the analysis. Directory symlinks are not followed.
 
 ## Requirements
 
-- [Zig](https://ziglang.org/) compiler (latest stable version)
+- [Zig](https://ziglang.org/) **0.16.0** (pinned in [`mise.toml`](mise.toml); use [mise](https://mise.jdx.dev/) or install that version manually)
 
 ## Building
 
@@ -102,6 +102,8 @@ Time taken:         2.5s
 - Fast file system traversal
 - Progress indicators for files and directories
 - Automatic exclusion of system directories (`/proc`, `/dev`, `/sys`)
+- Does not follow directory symlinks; does not cross into excluded system trees
+- Total size is a per-entry sum (not unique inode bytes)
 - Human-readable file size formatting
 - Cross-platform support (Linux, macOS, Windows)
 
@@ -111,4 +113,4 @@ MIT License - see [LICENSE](LICENSE.txt) file for details.
 
 ## Copyright
 
-Copyright (C) 2025 Alexander Egorov. All rights reserved.
+Copyright (C) 2025-2026 Alexander Egorov. All rights reserved.
