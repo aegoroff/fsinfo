@@ -14,7 +14,7 @@ The tool automatically excludes system directories like `/proc`, `/dev`, and `/s
 
 ## Requirements
 
-- [Zig](https://ziglang.org/) **0.16.0** (pinned in [`mise.toml`](mise.toml); use [mise](https://mise.jdx.dev/) or install that version manually)
+- [Zig](https://ziglang.org/) **0.16.0** and [just](https://github.com/casey/just) (both pinned in [`mise.toml`](mise.toml); use [mise](https://mise.jdx.dev/) or install them manually)
 
 ## Building
 
@@ -28,14 +28,18 @@ The executable will be placed in `zig-out/bin/fsinfo`.
 
 ### Cross-Platform Build
 
-The project includes build scripts for multiple platforms:
+Use [just](https://github.com/casey/just) (pinned in [`mise.toml`](mise.toml)):
 
 ```bash
-# Build for all platforms
-./build_all_zig.sh
+# Local ReleaseFast build / tests (x86_64-linux-musl)
+just build
+just test
 
-# Build for Linux only
-./linux_build_zig.sh
+# One release target (build + archive; tests on x86_64-linux)
+just arch=x86_64 os=linux abi=musl ver=0.2.0 cpu=core2 release
+
+# All CI release targets
+just ver=0.2.0 build-all
 ```
 
 ### Build Options

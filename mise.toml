@@ -1,33 +1,3 @@
 [tools]
 zig = "0.16.0"
-
-[tasks."build:zig"]
-description = "Build project"
-shell = "bash -c"
-run = [
-  """
-    [[ -n "${ABI}" ]] || ABI=musl
-    [[ -n "${OS}" ]] || OS=linux
-    [[ -n "${ARCH}" ]] || ARCH=x86_64
-    [[ -n "${VERSION}" ]] || VERSION="0.2.0-dev"
-
-    ZIG_PREFIX_DIR=bin-${ARCH}-${OS}-${ABI}
-    OPTIMIZE=ReleaseFast
-    TARGET="${ARCH}-${OS}-${ABI}"
-
-    DCPU=""
-    [[ -n "${CPU}" ]] && DCPU=-Dcpu="${CPU}"
-
-    echo "--- Step: Build ---"
-    zig build -Doptimize=${OPTIMIZE} ${DCPU} -Dtarget="$TARGET" -Dversion="${VERSION}" --summary all --prefix-exe-dir "${ZIG_PREFIX_DIR}"
-
-    if [[ "${ARCH}" = "x86_64" ]] && [[ "${OS}" = "linux" ]]; then
-      echo "--- Step: Test ---"
-      zig build test -Doptimize=${OPTIMIZE} ${DCPU} -Dtarget="$TARGET" --summary all
-    fi
-
-    echo "--- Step: Archive ---"
-    zig build archive -Doptimize=${OPTIMIZE} -Dtarget="$TARGET" -Dversion="${VERSION}" --summary all --prefix-exe-dir "${ZIG_PREFIX_DIR}"
-  """
-]
-
+just = "1.46.0"

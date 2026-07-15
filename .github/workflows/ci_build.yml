@@ -65,16 +65,15 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build with mise
-        shell: bash
-        run: |
-          export ABI="${{ matrix.abi }}"
-          export OS="${{ matrix.os }}"
-          export ARCH="${{ matrix.arch }}"
-          export CPU="${{ matrix.processor }}"
-          export VERSION="${{ steps.get_version.outputs.version }}"
-
-          mise run build:zig
+      - name: Build with just
+        run: >
+          just
+          arch=${{ matrix.arch }}
+          os=${{ matrix.os }}
+          abi=${{ matrix.abi }}
+          ver=${{ steps.get_version.outputs.version }}
+          cpu=${{ matrix.processor }}
+          release
 
       - name: Packaging
         run: |

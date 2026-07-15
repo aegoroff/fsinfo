@@ -44,17 +44,13 @@ zig build archive -Dversion=0.1.2
 zig build -Dtarget=x86_64-linux-musl -Doptimize=ReleaseFast
 ```
 
-Via **just** (uses mise for Zig):
+Via **just** (uses mise for Zig; CI uses the same recipes):
 
 ```bash
-just build          # ReleaseFast, x86_64-linux-musl, core2, version 0.1.2
+just build                                                      # ReleaseFast, x86_64-linux-musl, core2
 just test
-```
-
-Via **mise** (used in CI):
-
-```bash
-mise run build:zig
+just arch=x86_64 os=linux abi=musl ver=0.2.0 cpu=core2 release
+just ver=0.2.0 build-all                                        # all CI targets + archives
 ```
 
 Binary output: `zig-out/bin/fsinfo` (or custom prefix from `--prefix-exe-dir`).
@@ -110,7 +106,7 @@ zig build test
 
 Prefer table-driven or focused unit tests (see `src/lib.zig`). Full-tree scans are for manual smoke checks, not default automated tests.
 
-CI runs tests only for `x86_64-linux` builds (`mise.toml` task). Ensure tests pass on that target.
+CI runs tests only for `x86_64-linux` builds (`just release`). Ensure tests pass on that target.
 
 ## CI and releases
 
