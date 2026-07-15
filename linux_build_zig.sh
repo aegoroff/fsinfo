@@ -19,7 +19,7 @@ DCPU=""
 zig build -Doptimize=${OPTIMIZE} ${DCPU} -Dtarget="${ARCH}"-"${OS}"-"${ABI}" -Dversion="${VERSION}" --summary all --prefix-exe-dir "${ZIG_PREFIX_DIR}"
 
 if [[ "${ARCH}" = "x86_64" ]] && [[ "${OS}" = "linux" ]]; then
-  zig build test -Doptimize=${OPTIMIZE} "${DCPU}" -Dtarget="${ARCH}"-"${OS}"-"${ABI}" --summary all
+  zig build test -Doptimize=${OPTIMIZE} ${DCPU} -Dtarget="${ARCH}"-"${OS}"-"${ABI}" --summary all
 fi
 
 zig build archive -Doptimize=${OPTIMIZE} -Dtarget="${ARCH}"-"${OS}"-"${ABI}" -Dversion="${VERSION}" --summary all --prefix-exe-dir "${ZIG_PREFIX_DIR}"

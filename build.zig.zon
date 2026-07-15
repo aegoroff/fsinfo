@@ -1,8 +1,8 @@
 .{
-    .name = .fsfinfo,
+    .name = .fsinfo,
     .version = "0.1.0",
     .paths = .{"."},
-    .fingerprint = 0x403b56853b45a3c,
+    .fingerprint = 0x3bd039b06642bd5e,
     .dependencies = .{
         .yazap = .{
             .url = "https://github.com/prajwalch/yazap/archive/refs/tags/0.7.0.tar.gz",

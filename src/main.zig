@@ -39,11 +39,18 @@ pub fn main(init: std.process.Init) !void {
 
     // `openDir` accepts both absolute and relative PATH (e.g. `.`); absolute-only API asserts.
     var dir = try std.Io.Dir.cwd().openDir(init.io, source.?, .{ .iterate = true });
+    defer dir.close(init.io);
     // Selective walk: only descend into directories that are not excluded.
     // Plain `walk` enters every directory before returning the entry, so
     // skipping an excluded path with `continue` would still traverse children.
     var walker = try dir.walkSelectively(allocator);
-    defer walker.deinit();
+    defer {
+        // `deinit` does not close nested dir FDs left on the stack (e.g. early abort).
+        while (walker.stack.items.len > 0) {
+            walker.leave(init.io);
+        }
+        walker.deinit();
+    }
 
     const exclusions = lib.Exlusions{
         .haystack = &[_][]const u8{ "/proc", "/dev", "/sys" },

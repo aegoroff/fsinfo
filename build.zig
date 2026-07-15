@@ -62,13 +62,13 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_unit_tests.step);
 
     const tr = target.result;
-    const tar_file = std.fmt.allocPrint(b.allocator, "{s}/fsinfo-{s}-{s}-{s}-{s}.tar.gz", .{
+    const tar_file = b.fmt("{s}/fsinfo-{s}-{s}-{s}-{s}.tar.gz", .{
         b.install_prefix,
         version_opt,
         @tagName(tr.cpu.arch),
         @tagName(tr.os.tag),
         @tagName(tr.abi),
-    }) catch "";
+    });
 
     const zig_step = b.addSystemCommand(&.{
         "tar",

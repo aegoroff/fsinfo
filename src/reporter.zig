@@ -34,10 +34,10 @@ pub const Reporter = struct {
     pub fn update(self: *Reporter, entry: *std.Io.Dir.Walker.Entry) void {
         switch (entry.kind) {
             std.Io.File.Kind.file => {
-                self.total_file_count += 1;
                 const stat = entry.dir.statFile(self.io, entry.basename, .{ .follow_symlinks = false }) catch {
                     return;
                 };
+                self.total_file_count += 1;
                 self.total_size += stat.size;
             },
             std.Io.File.Kind.directory => {
@@ -45,15 +45,10 @@ pub const Reporter = struct {
             },
             else => {},
         }
-        if (self.total_file_count > portion_size and self.total_file_count % portion_size == 0) {
+        if (shouldUpdateProgress(self.total_file_count)) {
             self.files_progress.setCompletedItems(@intCast(self.total_file_count));
             self.directories_progress.setCompletedItems(@intCast(self.total_dir_count));
-
-            const end = std.Io.Clock.real.now(self.io);
-            const duration = self.start.durationTo(end);
-            const elapsed: usize = @intCast(duration.toSeconds());
-
-            self.progress.setCompletedItems(elapsed);
+            self.progress.setCompletedItems(elapsedSeconds(self.start.durationTo(std.Io.Clock.real.now(self.io))));
         }
     }
 
@@ -79,3 +74,27 @@ pub const Reporter = struct {
         writer.print("\n", .{}) catch {};
     }
 };
+
+fn shouldUpdateProgress(file_count: u64) bool {
+    return file_count >= portion_size and file_count % portion_size == 0;
+}
+
+fn elapsedSeconds(duration: std.Io.Duration) usize {
+    const secs = duration.toSeconds();
+    if (secs <= 0) return 0;
+    return @intCast(secs);
+}
+
+test "progress updates at portion boundary including first" {
+    try std.testing.expect(!shouldUpdateProgress(0));
+    try std.testing.expect(!shouldUpdateProgress(1023));
+    try std.testing.expect(shouldUpdateProgress(1024));
+    try std.testing.expect(!shouldUpdateProgress(1025));
+    try std.testing.expect(shouldUpdateProgress(2048));
+}
+
+test "elapsedSeconds saturates non-positive durations" {
+    try std.testing.expectEqual(@as(usize, 0), elapsedSeconds(.fromSeconds(0)));
+    try std.testing.expectEqual(@as(usize, 0), elapsedSeconds(.fromSeconds(-1)));
+    try std.testing.expectEqual(@as(usize, 3), elapsedSeconds(.fromSeconds(3)));
+}
