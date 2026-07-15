@@ -47,6 +47,15 @@ fn joinRelPath(gpa: std.mem.Allocator, parent: []const u8, name: []const u8) std
     return out;
 }
 
+fn logSkip(verbose: bool, comptime what: []const u8, path: []const u8, err: anyerror) void {
+    if (!verbose) return;
+    if (path.len == 0) {
+        std.log.warn("skip {s}: {s}", .{ what, @errorName(err) });
+    } else {
+        std.log.warn("skip {s} {s}: {s}", .{ what, path, @errorName(err) });
+    }
+}
+
 const DirJob = struct {
     dir: std.Io.Dir,
     /// Relative path from the scan root; empty for the root job itself.
@@ -109,6 +118,7 @@ const WalkCtx = struct {
     exclusions: lib.Exclusions,
     rep: *reporter.Reporter,
     queue: *DirQueue,
+    verbose: bool,
 
     /// Enqueue `job`, or park it on `overflow` when the shared queue is full.
     /// Without an overflow list (initial root submit), falls back to iterative `processDir`.
@@ -116,8 +126,9 @@ const WalkCtx = struct {
         _ = self.queue.pending.fetchAdd(1, .monotonic);
         if (self.queue.tryPush(self.io, job)) return;
         if (overflow) |o| {
-            o.append(self.gpa, job) catch {
+            o.append(self.gpa, job) catch |err| {
                 // Overflow list OOM: still make progress without blocking all workers.
+                logSkip(self.verbose, "overflow enqueue", job.rel_path, err);
                 self.processDir(job);
             };
             return;
@@ -152,12 +163,14 @@ const WalkCtx = struct {
 
         var it = job.dir.iterate();
         while (true) {
-            const entry_or_null = it.next(self.io) catch {
+            const entry_or_null = it.next(self.io) catch |err| {
+                logSkip(self.verbose, "readdir", job.rel_path, err);
                 continue;
             };
             const entry = entry_or_null orelse break;
 
-            const child_path = joinRelPath(self.gpa, job.rel_path, entry.name) catch {
+            const child_path = joinRelPath(self.gpa, job.rel_path, entry.name) catch |err| {
+                logSkip(self.verbose, "join path", entry.name, err);
                 continue;
             };
             if (self.exclusions.probe(child_path)) {
@@ -168,13 +181,15 @@ const WalkCtx = struct {
             switch (entry.kind) {
                 .file => {
                     defer self.gpa.free(child_path);
-                    const stat = job.dir.statFile(self.io, entry.name, .{ .follow_symlinks = false }) catch {
+                    const stat = job.dir.statFile(self.io, entry.name, .{ .follow_symlinks = false }) catch |err| {
+                        logSkip(self.verbose, "statFile", child_path, err);
                         continue;
                     };
                     self.rep.addFile(stat.size);
                 },
                 .directory => {
-                    const child_dir = job.dir.openDir(self.io, entry.name, open_options) catch {
+                    const child_dir = job.dir.openDir(self.io, entry.name, open_options) catch |err| {
+                        logSkip(self.verbose, "openDir", child_path, err);
                         self.gpa.free(child_path);
                         continue;
                     };
@@ -208,6 +223,7 @@ pub fn walkWithVisitor(
     exclusions: lib.Exclusions,
     context: anytype,
     comptime onEntry: fn (@TypeOf(context), *const std.Io.Dir.Walker.Entry) void,
+    verbose: bool,
 ) std.mem.Allocator.Error!void {
     var walker = try dir.walkSelectively(gpa);
     defer {
@@ -219,7 +235,8 @@ pub fn walkWithVisitor(
     }
 
     while (true) {
-        const entry_or_null = walker.next(io) catch {
+        const entry_or_null = walker.next(io) catch |err| {
+            logSkip(verbose, "walker.next", "", err);
             continue;
         };
         const entry = entry_or_null orelse break;
@@ -227,7 +244,8 @@ pub fn walkWithVisitor(
             continue;
         }
         if (entry.kind == .directory) {
-            walker.enter(io, entry) catch {
+            walker.enter(io, entry) catch |err| {
+                logSkip(verbose, "enter", entry.path, err);
                 continue;
             };
         }
@@ -245,8 +263,9 @@ pub fn walk(
     dir: std.Io.Dir,
     exclusions: lib.Exclusions,
     rep: *reporter.Reporter,
+    verbose: bool,
 ) std.mem.Allocator.Error!void {
-    try walkWithVisitor(io, gpa, dir, exclusions, rep, reportEntry);
+    try walkWithVisitor(io, gpa, dir, exclusions, rep, reportEntry, verbose);
 }
 
 /// Parallel directory walk via a shared work queue of owning directory FDs.
@@ -258,6 +277,7 @@ pub fn walkParallel(
     exclusions: lib.Exclusions,
     rep: *reporter.Reporter,
     jobs: usize,
+    verbose: bool,
 ) (std.mem.Allocator.Error || std.Io.ConcurrentError || std.Io.Dir.OpenError)!void {
     std.debug.assert(jobs >= 2);
 
@@ -276,6 +296,7 @@ pub fn walkParallel(
         .exclusions = exclusions,
         .rep = rep,
         .queue = &queue,
+        .verbose = verbose,
     };
 
     var root_dir: ?std.Io.Dir = try cloneDir(io, dir);
@@ -340,7 +361,7 @@ test "selective walk does not descend into excluded directories" {
     };
     var seen: Seen = .{};
 
-    try walkWithVisitor(io, std.testing.allocator, tmp.dir, exclusions, &seen, Seen.onEntry);
+    try walkWithVisitor(io, std.testing.allocator, tmp.dir, exclusions, &seen, Seen.onEntry, false);
 
     try std.testing.expect(seen.keep_a);
     try std.testing.expect(!seen.proc);
@@ -373,7 +394,7 @@ test "selective walk does not descend through directory symlinks" {
     };
     var seen: Seen = .{};
 
-    try walkWithVisitor(io, std.testing.allocator, tmp.dir, exclusions, &seen, Seen.onEntry);
+    try walkWithVisitor(io, std.testing.allocator, tmp.dir, exclusions, &seen, Seen.onEntry, false);
 
     try std.testing.expect(!seen.entered_link);
     try std.testing.expect(!seen.hidden_via_link);
@@ -434,10 +455,10 @@ test "parallel walk matches serial totals" {
         }
     };
     var serial: SerialTotals = .{ .io = io };
-    try walkWithVisitor(io, std.testing.allocator, tmp.dir, exclusions, &serial, SerialTotals.onEntry);
+    try walkWithVisitor(io, std.testing.allocator, tmp.dir, exclusions, &serial, SerialTotals.onEntry, false);
 
-    var parallel_rep = reporter.Reporter.init(io);
-    try walkParallel(io, std.testing.allocator, tmp.dir, exclusions, &parallel_rep, 2);
+    var parallel_rep = reporter.Reporter.init(io, false);
+    try walkParallel(io, std.testing.allocator, tmp.dir, exclusions, &parallel_rep, 2, false);
     const parallel_files = parallel_rep.fileCount();
     const parallel_dirs = parallel_rep.dirCount();
     const parallel_bytes = parallel_rep.byteCount();

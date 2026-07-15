@@ -32,13 +32,13 @@ pub fn main(init: std.process.Init) !void {
         return err;
     };
 
-    var rep = reporter.Reporter.init(init.io);
+    var rep = reporter.Reporter.init(init.io, opts.verbose);
     defer rep.finish(stdout);
 
     if (opts.jobs == 1) {
-        try scan.walk(init.io, init.gpa, dir, scan.default_exclusions, &rep);
+        try scan.walk(init.io, init.gpa, dir, scan.default_exclusions, &rep, opts.verbose);
     } else {
-        try scan.walkParallel(init.io, init.gpa, dir, scan.default_exclusions, &rep, opts.jobs);
+        try scan.walkParallel(init.io, init.gpa, dir, scan.default_exclusions, &rep, opts.jobs, opts.verbose);
     }
 }
 

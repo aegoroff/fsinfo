@@ -10,6 +10,9 @@ pub const Options = struct {
     /// Owned by the caller; free with `gpa.free`.
     path: []u8,
     jobs: usize,
+    /// When set, skipped walk entries (permission errors, OOM, openDir failures, …)
+    /// are reported via `std.log.warn`.
+    verbose: bool,
 };
 
 fn cpuCount() usize {
@@ -56,6 +59,11 @@ pub fn parse(gpa: std.mem.Allocator, io: std.Io, args: std.process.Args) !Option
         'j',
         "Parallel directory-walk workers (default: half the CPU count; max 128 or CPU count)",
     ));
+    try root_cmd.addArg(yazap.Arg.booleanOption(
+        "verbose",
+        'v',
+        "Log skipped entries (permission errors, open failures, allocation failures, …)",
+    ));
 
     const matches = try app.parseProcess(io, args);
     const path = try gpa.dupe(u8, matches.getSingleValue("PATH").?);
@@ -68,7 +76,11 @@ pub fn parse(gpa: std.mem.Allocator, io: std.Io, args: std.process.Args) !Option
         break :blk defaultJobs();
     };
 
-    return .{ .path = path, .jobs = try validateJobs(jobs) };
+    return .{
+        .path = path,
+        .jobs = try validateJobs(jobs),
+        .verbose = matches.containsArg("verbose"),
+    };
 }
 
 test "defaultJobs is at least one" {

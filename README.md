@@ -71,6 +71,7 @@ fsinfo [OPTIONS] <PATH>
 | Option | Description |
 |--------|-------------|
 | `-j`, `--jobs N` | Parallel directory-walk workers. Default: half the logical CPU count (at least 1). Must be between 1 and 128 (or the CPU count if higher). Use `-j 1` for single-threaded. |
+| `-v`, `--verbose` | Log skipped entries to stderr (`std.log.warn`): permission errors, failed `openDir`/`statFile`, allocation failures, and similar silent skips. Off by default. |
 
 ### Examples
 
@@ -80,6 +81,9 @@ fsinfo .
 
 # Force single-threaded scan
 fsinfo --jobs 1 .
+
+# Show why entries were skipped during the walk
+fsinfo -v /
 
 # Analyze root filesystem (excluding /proc, /dev, /sys)
 fsinfo /
@@ -108,6 +112,7 @@ Time taken:         2.5s
 ## Features
 
 - Fast file system traversal with optional parallel directory walk (`--jobs`)
+- Optional verbose logging of skipped entries (`--verbose`)
 - Progress indicators for files and directories
 - Automatic exclusion of system directories (`/proc`, `/dev`, `/sys`)
 - Does not follow directory symlinks; does not cross into excluded system trees

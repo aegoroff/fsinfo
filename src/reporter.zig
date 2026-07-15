@@ -12,8 +12,9 @@ pub const Reporter = struct {
     files_progress: std.Progress.Node,
     start: std.Io.Timestamp,
     io: std.Io,
+    verbose: bool,
 
-    pub fn init(io: std.Io) Reporter {
+    pub fn init(io: std.Io, verbose: bool) Reporter {
         var progress = std.Progress.start(io, .{
             .estimated_total_items = 0,
             .root_name = "Time, sec",
@@ -31,6 +32,7 @@ pub const Reporter = struct {
             .files_progress = files_progress,
             .start = std.Io.Clock.real.now(io),
             .io = io,
+            .verbose = verbose,
         };
     }
 
@@ -72,7 +74,10 @@ pub const Reporter = struct {
     pub fn update(self: *Reporter, entry: *const std.Io.Dir.Walker.Entry) void {
         switch (entry.kind) {
             std.Io.File.Kind.file => {
-                const stat = entry.dir.statFile(self.io, entry.basename, .{ .follow_symlinks = false }) catch {
+                const stat = entry.dir.statFile(self.io, entry.basename, .{ .follow_symlinks = false }) catch |err| {
+                    if (self.verbose) {
+                        std.log.warn("skip statFile {s}: {s}", .{ entry.path, @errorName(err) });
+                    }
                     return;
                 };
                 self.addFile(stat.size);
