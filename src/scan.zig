@@ -16,62 +16,9 @@ pub const default_exclusions = lib.Exclusions{
 
 const queue_slots_per_job: usize = 64;
 
-fn parentPathOf(path: []const u8, basename: []const u8) []const u8 {
-    if (path.len == basename.len) return path[0..0];
-    // Walker builds `dir/basename`; drop the separator before basename.
-    return path[0 .. path.len - basename.len - 1];
-}
-
-test "parentPathOf strips basename" {
-    try std.testing.expectEqualStrings("", parentPathOf("file.txt", "file.txt"));
-    try std.testing.expectEqualStrings("a", parentPathOf("a/b", "b"));
-    try std.testing.expectEqualStrings("a/b", parentPathOf("a/b/c.txt", "c.txt"));
-}
-
-/// Owning duplicate of a parent directory; shared by jobs with files in that directory.
-/// Identity is the parent path — not the FD number (FDs are recycled after `leave`).
-const SharedDir = struct {
-    dir: std.Io.Dir,
-    parent_path: []const u8,
-    refs: std.atomic.Value(usize),
-    gpa: std.mem.Allocator,
-
-    fn create(io: std.Io, gpa: std.mem.Allocator, src: std.Io.Dir, parent_path: []const u8) !*SharedDir {
-        const cloned = try cloneDir(io, src);
-        errdefer cloned.close(io);
-        const path_copy = try gpa.dupe(u8, parent_path);
-        errdefer gpa.free(path_copy);
-        const self = try gpa.create(SharedDir);
-        self.* = .{
-            .dir = cloned,
-            .parent_path = path_copy,
-            .refs = .init(1),
-            .gpa = gpa,
-        };
-        return self;
-    }
-
-    fn matches(self: *const SharedDir, path: []const u8, basename: []const u8) bool {
-        return std.mem.eql(u8, self.parent_path, parentPathOf(path, basename));
-    }
-
-    fn retain(self: *SharedDir) void {
-        _ = self.refs.fetchAdd(1, .monotonic);
-    }
-
-    fn release(self: *SharedDir, io: std.Io) void {
-        if (self.refs.fetchSub(1, .release) == 1) {
-            self.dir.close(io);
-            self.gpa.free(self.parent_path);
-            self.gpa.destroy(self);
-        }
-    }
-};
-
 fn cloneDir(io: std.Io, dir: std.Io.Dir) !std.Io.Dir {
     if (builtin.os.tag == .windows) {
-        // CRT `dup` is not applicable to Windows HANDLEs; open "." via Io instead.
-        return dir.openDir(io, ".", .{ .follow_symlinks = false });
+        return dir.openDir(io, ".", open_options);
     } else {
         const fd = std.c.dup(dir.handle);
         if (fd < 0) return error.Unexpected;
@@ -79,70 +26,136 @@ fn cloneDir(io: std.Io, dir: std.Io.Dir) !std.Io.Dir {
     }
 }
 
-const StatJob = struct {
-    parent: *SharedDir,
-    basename: []const u8,
+fn joinRelPath(gpa: std.mem.Allocator, parent: []const u8, name: []const u8) std.mem.Allocator.Error![]u8 {
+    if (parent.len == 0) return gpa.dupe(u8, name);
+    const out = try gpa.alloc(u8, parent.len + 1 + name.len);
+    @memcpy(out[0..parent.len], parent);
+    out[parent.len] = std.fs.path.sep;
+    @memcpy(out[parent.len + 1 ..][0..name.len], name);
+    return out;
+}
 
-    fn deinit(self: StatJob, io: std.Io, gpa: std.mem.Allocator) void {
-        self.parent.release(io);
-        gpa.free(self.basename);
+const DirJob = struct {
+    dir: std.Io.Dir,
+    /// Relative path from the scan root; empty for the root job itself.
+    rel_path: []u8,
+
+    fn deinit(self: DirJob, io: std.Io, gpa: std.mem.Allocator) void {
+        self.dir.close(io);
+        gpa.free(self.rel_path);
     }
 };
 
-const JobQueue = struct {
+const DirQueue = struct {
     mutex: std.Io.Mutex = .init,
     not_empty: std.Io.Condition = .init,
     not_full: std.Io.Condition = .init,
-    items: std.ArrayList(StatJob) = .empty,
+    items: std.ArrayList(DirJob) = .empty,
     capacity: usize,
-    closed: bool = false,
+    /// Directories pushed that have not finished `processDir` yet.
+    pending: std.atomic.Value(usize) = .init(0),
     gpa: std.mem.Allocator,
 
-    fn deinit(self: *JobQueue, io: std.Io) void {
+    fn deinit(self: *DirQueue, io: std.Io) void {
         for (self.items.items) |job| {
             job.deinit(io, self.gpa);
         }
         self.items.deinit(self.gpa);
     }
 
-    fn push(self: *JobQueue, io: std.Io, job: StatJob) void {
+    fn tryPush(self: *DirQueue, io: std.Io, job: DirJob) bool {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
-
-        while (self.items.items.len >= self.capacity and !self.closed) {
-            self.not_full.waitUncancelable(io, &self.mutex);
-        }
-        if (self.closed) {
-            job.deinit(io, self.gpa);
-            return;
-        }
-        self.items.append(self.gpa, job) catch {
-            job.deinit(io, self.gpa);
-            return;
-        };
+        if (self.items.items.len >= self.capacity) return false;
+        self.items.append(self.gpa, job) catch return false;
         self.not_empty.signal(io);
+        return true;
     }
 
-    fn pop(self: *JobQueue, io: std.Io) ?StatJob {
+    fn popWait(self: *DirQueue, io: std.Io) ?DirJob {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
 
-        while (self.items.items.len == 0 and !self.closed) {
+        while (self.items.items.len == 0) {
+            if (self.pending.load(.acquire) == 0) return null;
             self.not_empty.waitUncancelable(io, &self.mutex);
         }
-        const job = self.items.pop() orelse return null;
+        const job = self.items.pop().?;
         self.not_full.signal(io);
         return job;
     }
 
-    fn close(self: *JobQueue, io: std.Io) void {
-        self.mutex.lockUncancelable(io);
-        defer self.mutex.unlock(io);
-        self.closed = true;
-        self.not_empty.broadcast(io);
-        self.not_full.broadcast(io);
+    fn markDone(self: *DirQueue, io: std.Io) void {
+        if (self.pending.fetchSub(1, .acq_rel) == 1) {
+            self.mutex.lockUncancelable(io);
+            defer self.mutex.unlock(io);
+            self.not_empty.broadcast(io);
+        }
     }
 };
+
+const WalkCtx = struct {
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    exclusions: lib.Exclusions,
+    rep: *reporter.Reporter,
+    queue: *DirQueue,
+};
+
+fn submitDir(ctx: *WalkCtx, job: DirJob) void {
+    _ = ctx.queue.pending.fetchAdd(1, .monotonic);
+    if (ctx.queue.tryPush(ctx.io, job)) return;
+    // Queue full: process inline so workers never all block on push.
+    processDir(ctx, job);
+}
+
+fn processDir(ctx: *WalkCtx, job: DirJob) void {
+    defer {
+        job.deinit(ctx.io, ctx.gpa);
+        ctx.queue.markDone(ctx.io);
+    }
+
+    var it = job.dir.iterate();
+    while (true) {
+        const entry_or_null = it.next(ctx.io) catch {
+            continue;
+        };
+        const entry = entry_or_null orelse break;
+
+        switch (entry.kind) {
+            .file => {
+                const stat = job.dir.statFile(ctx.io, entry.name, .{ .follow_symlinks = false }) catch {
+                    continue;
+                };
+                ctx.rep.addFile(stat.size);
+            },
+            .directory => {
+                const child_path = joinRelPath(ctx.gpa, job.rel_path, entry.name) catch {
+                    continue;
+                };
+                if (ctx.exclusions.probe(child_path)) {
+                    ctx.gpa.free(child_path);
+                    continue;
+                }
+                const child_dir = job.dir.openDir(ctx.io, entry.name, open_options) catch {
+                    ctx.gpa.free(child_path);
+                    continue;
+                };
+                ctx.rep.addDir();
+                submitDir(ctx, .{ .dir = child_dir, .rel_path = child_path });
+            },
+            else => {},
+        }
+        ctx.rep.maybeRefreshProgress();
+    }
+}
+
+fn dirWorker(ctx: *WalkCtx) void {
+    while (true) {
+        const job = ctx.queue.popWait(ctx.io) orelse return;
+        processDir(ctx, job);
+    }
+}
 
 /// Selective walk: only descend into directories that are not excluded.
 /// Plain `walk` enters every directory before returning the entry, so
@@ -196,26 +209,8 @@ pub fn walk(
     try walkWithVisitor(io, gpa, dir, exclusions, rep, reportEntry);
 }
 
-fn statWorker(
-    io: std.Io,
-    queue: *JobQueue,
-    rep: *reporter.Reporter,
-) void {
-    while (true) {
-        const job = queue.pop(io) orelse return;
-        defer job.deinit(io, queue.gpa);
-        const stat = job.parent.dir.statFile(io, job.basename, .{ .follow_symlinks = false }) catch {
-            continue;
-        };
-        rep.addFile(stat.size);
-    }
-}
-
-/// Single-threaded selective walk; parallel `statFile` via a bounded queue and `jobs` workers.
+/// Parallel directory walk via a shared work queue of owning directory FDs.
 /// `jobs` must be >= 2; use `walk` for the single-threaded path.
-///
-/// Workers `statFile` on a dup'd parent directory + basename (same as the serial path),
-/// not on a full path from the scan root.
 pub fn walkParallel(
     io: std.Io,
     gpa: std.mem.Allocator,
@@ -223,74 +218,38 @@ pub fn walkParallel(
     exclusions: lib.Exclusions,
     rep: *reporter.Reporter,
     jobs: usize,
-) (std.mem.Allocator.Error || std.Io.Cancelable || std.Io.ConcurrentError)!void {
+) (std.mem.Allocator.Error || std.Io.Cancelable || std.Io.ConcurrentError || std.Io.UnexpectedError)!void {
     std.debug.assert(jobs >= 2);
 
-    var queue: JobQueue = .{
+    var queue: DirQueue = .{
         .capacity = jobs * queue_slots_per_job,
         .gpa = gpa,
     };
     defer queue.deinit(io);
 
+    var ctx: WalkCtx = .{
+        .io = io,
+        .gpa = gpa,
+        .exclusions = exclusions,
+        .rep = rep,
+        .queue = &queue,
+    };
+
+    var root_dir: ?std.Io.Dir = try cloneDir(io, dir);
+    errdefer if (root_dir) |d| d.close(io);
+    var root_path: ?[]u8 = try gpa.alloc(u8, 0);
+    errdefer if (root_path) |p| gpa.free(p);
+
+    submitDir(&ctx, .{ .dir = root_dir.?, .rel_path = root_path.? });
+    root_dir = null;
+    root_path = null;
+
     var group: std.Io.Group = .init;
     errdefer group.cancel(io);
 
     for (0..jobs) |_| {
-        try group.concurrent(io, statWorker, .{ io, &queue, rep });
+        try group.concurrent(io, dirWorker, .{&ctx});
     }
-
-    var walker = try dir.walkSelectively(gpa);
-    defer {
-        while (walker.stack.items.len > 0) {
-            walker.leave(io);
-        }
-        walker.deinit();
-    }
-
-    var current_parent: ?*SharedDir = null;
-    defer if (current_parent) |parent| parent.release(io);
-
-    while (true) {
-        const entry_or_null = walker.next(io) catch {
-            continue;
-        };
-        const entry = entry_or_null orelse break;
-        if (exclusions.probe(entry.path)) {
-            continue;
-        }
-        switch (entry.kind) {
-            .directory => {
-                walker.enter(io, entry) catch {
-                    continue;
-                };
-                rep.addDir();
-            },
-            .file => {
-                if (current_parent == null or !current_parent.?.matches(entry.path, entry.basename)) {
-                    if (current_parent) |parent| parent.release(io);
-                    current_parent = SharedDir.create(
-                        io,
-                        gpa,
-                        entry.dir,
-                        parentPathOf(entry.path, entry.basename),
-                    ) catch {
-                        continue;
-                    };
-                }
-                const parent = current_parent.?;
-                parent.retain();
-                const basename = gpa.dupe(u8, entry.basename) catch {
-                    parent.release(io);
-                    continue;
-                };
-                queue.push(io, .{ .parent = parent, .basename = basename });
-            },
-            else => {},
-        }
-        rep.maybeRefreshProgress();
-    }
-
-    queue.close(io);
     try group.await(io);
 }
 
@@ -382,10 +341,13 @@ test "parallel walk matches serial totals" {
     try tmp.dir.createDir(io, "a", .default_dir);
     try tmp.dir.createDir(io, "a/b", .default_dir);
     try tmp.dir.createDir(io, "proc", .default_dir);
+    try tmp.dir.createDir(io, "real", .default_dir);
     try tmp.dir.writeFile(io, .{ .sub_path = "root.txt", .data = "root" });
     try tmp.dir.writeFile(io, .{ .sub_path = "a/x.txt", .data = "xx" });
     try tmp.dir.writeFile(io, .{ .sub_path = "a/b/y.txt", .data = "yyy" });
     try tmp.dir.writeFile(io, .{ .sub_path = "proc/secret.txt", .data = "nope" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "real/hidden.txt", .data = "x" });
+    try tmp.dir.symLink(io, "real", "link", .{ .is_directory = true });
 
     const exclusions = lib.Exclusions{
         .haystack = &[_][]const u8{"/proc"},
@@ -425,7 +387,8 @@ test "parallel walk matches serial totals" {
     try std.testing.expectEqual(serial.files, parallel_files);
     try std.testing.expectEqual(serial.dirs, parallel_dirs);
     try std.testing.expectEqual(serial.bytes, parallel_bytes);
-    try std.testing.expectEqual(@as(u64, 3), serial.files);
-    try std.testing.expectEqual(@as(u64, 2), serial.dirs);
-    try std.testing.expectEqual(@as(u64, 4 + 2 + 3), serial.bytes);
+    // keep/, a/, a/b/, real/ — not proc/, not via link/
+    try std.testing.expectEqual(@as(u64, 4), serial.files);
+    try std.testing.expectEqual(@as(u64, 3), serial.dirs);
+    try std.testing.expectEqual(@as(u64, 4 + 2 + 3 + 1), serial.bytes);
 }

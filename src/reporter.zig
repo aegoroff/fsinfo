@@ -5,8 +5,8 @@ pub const Reporter = struct {
     total_size: std.atomic.Value(u64),
     total_file_count: std.atomic.Value(u64),
     total_dir_count: std.atomic.Value(u64),
-    /// Walk-thread only: next file count that should refresh progress UI.
-    next_progress_at: u64,
+    /// Next file count that should refresh progress UI (claimed via CAS).
+    next_progress_at: std.atomic.Value(u64),
     progress: std.Progress.Node,
     directories_progress: std.Progress.Node,
     files_progress: std.Progress.Node,
@@ -25,7 +25,7 @@ pub const Reporter = struct {
             .total_size = .init(0),
             .total_file_count = .init(0),
             .total_dir_count = .init(0),
-            .next_progress_at = progress_portion,
+            .next_progress_at = .init(progress_portion),
             .progress = progress,
             .directories_progress = directories_progress,
             .files_progress = files_progress,
@@ -55,11 +55,15 @@ pub const Reporter = struct {
         return self.total_size.load(.monotonic);
     }
 
-    /// Safe to call from the walk thread while workers mutate atomics.
+    /// Safe to call concurrently while workers mutate counters.
     pub fn maybeRefreshProgress(self: *Reporter) void {
         const files = self.fileCount();
-        if (files < self.next_progress_at) return;
-        self.next_progress_at = files - (files % progress_portion) + progress_portion;
+        const next = self.next_progress_at.load(.monotonic);
+        if (files < next) return;
+        const new_next = files - (files % progress_portion) + progress_portion;
+        if (self.next_progress_at.cmpxchgStrong(next, new_next, .monotonic, .monotonic) != null) {
+            return;
+        }
         self.files_progress.setCompletedItems(@intCast(files));
         self.directories_progress.setCompletedItems(@intCast(self.dirCount()));
         self.progress.setCompletedItems(elapsedSeconds(self.start.durationTo(std.Io.Clock.real.now(self.io))));

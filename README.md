@@ -70,16 +70,16 @@ fsinfo [OPTIONS] <PATH>
 
 | Option | Description |
 |--------|-------------|
-| `-j`, `--jobs N` | Parallel `stat` workers. Default: `1` (single-threaded). Raise on trees where parallel helps (try e.g. `-j` half your CPU count). |
+| `-j`, `--jobs N` | Parallel directory-walk workers. Default: half the logical CPU count (at least 1). Use `-j 1` for single-threaded. |
 
 ### Examples
 
 ```bash
-# Analyze current directory (default: single-threaded)
+# Analyze current directory (default: half the CPU count)
 fsinfo .
 
-# Parallel stats (opt-in; can help or hurt depending on the tree)
-fsinfo -j 8 /usr
+# Force single-threaded scan
+fsinfo --jobs 1 .
 
 # Analyze root filesystem (excluding /proc, /dev, /sys)
 fsinfo /
@@ -103,7 +103,7 @@ Time taken:         2.5s
 
 ## Features
 
-- Fast file system traversal with optional parallel file stats (`--jobs`)
+- Fast file system traversal with optional parallel directory walk (`--jobs`)
 - Progress indicators for files and directories
 - Automatic exclusion of system directories (`/proc`, `/dev`, `/sys`)
 - Does not follow directory symlinks; does not cross into excluded system trees

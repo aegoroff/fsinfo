@@ -6,7 +6,8 @@ const reporter = @import("reporter.zig");
 const scan = @import("scan.zig");
 
 pub fn defaultJobs() usize {
-    return 1;
+    const cpu_count = std.Thread.getCpuCount() catch 1;
+    return @max(cpu_count / 2, 1);
 }
 
 pub fn main(init: std.process.Init) !void {
@@ -41,7 +42,7 @@ pub fn main(init: std.process.Init) !void {
     try root_cmd.addArg(yazap.Arg.singleValueOption(
         "jobs",
         'j',
-        "Parallel stat workers (default 1 = single-threaded)",
+        "Parallel directory-walk workers (default: half the CPU count)",
     ));
 
     const matches = try app.parseProcess(init.io, init.minimal.args);
@@ -73,6 +74,6 @@ test {
     @import("std").testing.refAllDecls(@This());
 }
 
-test "defaultJobs is serial" {
-    try std.testing.expectEqual(@as(usize, 1), defaultJobs());
+test "defaultJobs is at least one" {
+    try std.testing.expect(defaultJobs() >= 1);
 }
