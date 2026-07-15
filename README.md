@@ -10,7 +10,7 @@ A non-interactive file system information tool implemented in Zig.
 - Total size of all files (sum of sizes per directory entry; hard-linked names are counted separately)
 - Time taken for the analysis
 
-The tool automatically excludes system directories like `/proc`, `/dev`, and `/sys` during scanning and provides progress updates during the analysis. Directory symlinks are not followed. If `PATH` itself is one of those directories (or lies inside them), `fsinfo` refuses to scan and exits with an error.
+The tool automatically excludes system directories like `/proc`, `/dev`, and `/sys` during scanning, as well as any `tmpfs` mounts on Linux (typically `/run`, `/tmp`, `/dev/shm`), and provides progress updates during the analysis. Directory symlinks are not followed. If `PATH` itself is one of those directories (or lies inside them), `fsinfo` refuses to scan and exits with an error.
 
 ## Requirements
 
@@ -85,12 +85,13 @@ fsinfo --jobs 1 .
 # Show why entries were skipped during the walk
 fsinfo -v /
 
-# Analyze root filesystem (excluding /proc, /dev, /sys)
+# Analyze root filesystem (excluding /proc, /dev, /sys, and tmpfs mounts)
 fsinfo /
 
 # These fail: PATH itself is under a default exclusion
 # fsinfo /proc
 # fsinfo /sys
+# fsinfo /run   # tmpfs on typical systemd hosts
 ```
 
 ### Output Format
@@ -114,7 +115,7 @@ Time taken:         2.5s
 - Fast file system traversal with optional parallel directory walk (`--jobs`)
 - Optional verbose logging of skipped entries (`--verbose`)
 - Progress indicators for files and directories
-- Automatic exclusion of system directories (`/proc`, `/dev`, `/sys`)
+- Automatic exclusion of system directories (`/proc`, `/dev`, `/sys`) and Linux `tmpfs` mounts
 - Does not follow directory symlinks; does not cross into excluded system trees
 - Total size is a per-entry sum (not unique inode bytes)
 - Human-readable file size formatting

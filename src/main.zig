@@ -20,11 +20,13 @@ pub fn main(init: std.process.Init) !void {
     };
     defer init.gpa.free(opts.path);
 
+    const exclusions = try scan.buildExclusions(init.arena.allocator(), init.io);
+
     // `openDir` accepts both absolute and relative PATH (e.g. `.`); absolute-only API asserts.
     var dir = try std.Io.Dir.cwd().openDir(init.io, opts.path, scan.open_options);
     defer dir.close(init.io);
 
-    scan.ensureRootAllowed(init.io, dir, scan.default_exclusions) catch |err| {
+    scan.ensureRootAllowed(init.io, dir, exclusions) catch |err| {
         if (err == error.PathExcluded) {
             std.log.err("path is excluded from scanning ({s})", .{opts.path});
             std.process.exit(2);
@@ -36,9 +38,9 @@ pub fn main(init: std.process.Init) !void {
     defer rep.finish(stdout);
 
     if (opts.jobs == 1) {
-        try scan.walk(init.io, init.gpa, dir, scan.default_exclusions, &rep, opts.verbose);
+        try scan.walk(init.io, init.gpa, dir, exclusions, &rep, opts.verbose);
     } else {
-        try scan.walkParallel(init.io, init.gpa, dir, scan.default_exclusions, &rep, opts.jobs, opts.verbose);
+        try scan.walkParallel(init.io, init.gpa, dir, exclusions, &rep, opts.jobs, opts.verbose);
     }
 }
 

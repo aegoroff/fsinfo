@@ -14,8 +14,86 @@ pub const default_exclusions = lib.Exclusions{
     .haystack = &default_exclusion_paths,
 };
 
-/// Rejects a scan when the opened root resolves to a default-excluded path
-/// (e.g. `fsinfo /proc` or `fsinfo /proc/1`).
+/// Exclusion list = built-in pseudo-FS paths plus every `tmpfs` mount point
+/// discovered from `/proc/self/mountinfo` on Linux (e.g. `/run`, `/tmp`).
+/// Path strings live in `arena`.
+pub fn buildExclusions(arena: std.mem.Allocator, io: std.Io) std.mem.Allocator.Error!lib.Exclusions {
+    var list: std.ArrayList([]const u8) = .empty;
+    try list.appendSlice(arena, &default_exclusion_paths);
+    if (builtin.os.tag == .linux) {
+        appendTmpfsMountPoints(arena, io, &list) catch |err| switch (err) {
+            error.OutOfMemory => return error.OutOfMemory,
+            else => {},
+        };
+    }
+    return .{ .haystack = try list.toOwnedSlice(arena) };
+}
+
+fn appendTmpfsMountPoints(
+    arena: std.mem.Allocator,
+    io: std.Io,
+    list: *std.ArrayList([]const u8),
+) !void {
+    // `/proc` files report size 0; positional reads return empty — use streaming.
+    var file = try std.Io.Dir.cwd().openFile(io, "/proc/self/mountinfo", .{});
+    defer file.close(io);
+    var buffer: [4096]u8 = undefined;
+    var file_reader = file.readerStreaming(io, &buffer);
+    const content = file_reader.interface.allocRemaining(arena, .limited(1024 * 1024)) catch |err| switch (err) {
+        error.ReadFailed => return file_reader.err.?,
+        error.OutOfMemory, error.StreamTooLong => |e| return e,
+    };
+    try appendTmpfsMountPointsFrom(arena, content, list);
+}
+
+fn appendTmpfsMountPointsFrom(
+    arena: std.mem.Allocator,
+    content: []const u8,
+    list: *std.ArrayList([]const u8),
+) std.mem.Allocator.Error!void {
+    var lines = std.mem.splitScalar(u8, content, '\n');
+    while (lines.next()) |line| {
+        if (line.len == 0) continue;
+        const dash = std.mem.indexOf(u8, line, " - ") orelse continue;
+        var right = std.mem.tokenizeScalar(u8, line[dash + 3 ..], ' ');
+        const fstype = right.next() orelse continue;
+        if (!std.mem.eql(u8, fstype, "tmpfs")) continue;
+
+        var left = std.mem.tokenizeScalar(u8, line[0..dash], ' ');
+        _ = left.next(); // mount id
+        _ = left.next(); // parent id
+        _ = left.next(); // major:minor
+        _ = left.next(); // root within filesystem
+        const mount_point_esc = left.next() orelse continue;
+        const mount_point = try unescapeMountPath(arena, mount_point_esc);
+        try list.append(arena, mount_point);
+    }
+}
+
+fn unescapeMountPath(arena: std.mem.Allocator, escaped: []const u8) std.mem.Allocator.Error![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    errdefer out.deinit(arena);
+    var i: usize = 0;
+    while (i < escaped.len) {
+        if (escaped[i] == '\\' and i + 3 < escaped.len) {
+            const d0 = escaped[i + 1];
+            const d1 = escaped[i + 2];
+            const d2 = escaped[i + 3];
+            if (d0 >= '0' and d0 <= '7' and d1 >= '0' and d1 <= '7' and d2 >= '0' and d2 <= '7') {
+                const value: u8 = @intCast((d0 - '0') * 64 + (d1 - '0') * 8 + (d2 - '0'));
+                try out.append(arena, value);
+                i += 4;
+                continue;
+            }
+        }
+        try out.append(arena, escaped[i]);
+        i += 1;
+    }
+    return try out.toOwnedSlice(arena);
+}
+
+/// Rejects a scan when the opened root resolves to an excluded path
+/// (e.g. `fsinfo /proc`, or a tmpfs mount like `fsinfo /run`).
 pub fn ensureRootAllowed(
     io: std.Io,
     dir: std.Io.Dir,
@@ -332,6 +410,50 @@ test "ensureRootAllowed rejects excluded absolute roots" {
     var usr_dir = try std.Io.Dir.cwd().openDir(io, "/usr", open_options);
     defer usr_dir.close(io);
     try ensureRootAllowed(io, usr_dir, default_exclusions);
+}
+
+test "unescapeMountPath decodes octal escapes" {
+    const path = try unescapeMountPath(std.testing.allocator, "/run/with\\040space");
+    defer std.testing.allocator.free(path);
+    try std.testing.expectEqualStrings("/run/with space", path);
+}
+
+test "appendTmpfsMountPointsFrom collects tmpfs targets" {
+    const sample =
+        \\24 1 0:22 / /run rw,nosuid - tmpfs tmpfs rw
+        \\25 24 0:23 / /run/user/1000 rw - tmpfs tmpfs rw
+        \\26 1 0:24 / /home rw - ext4 /dev/sda1 rw
+        \\27 1 0:25 / /tmp rw - tmpfs tmpfs rw
+        \\28 1 0:26 / /mnt/with\040space rw - tmpfs tmpfs rw
+    ;
+    var list: std.ArrayList([]const u8) = .empty;
+    defer {
+        for (list.items) |p| std.testing.allocator.free(p);
+        list.deinit(std.testing.allocator);
+    }
+    try appendTmpfsMountPointsFrom(std.testing.allocator, sample, &list);
+
+    try std.testing.expectEqual(@as(usize, 4), list.items.len);
+    try std.testing.expectEqualStrings("/run", list.items[0]);
+    try std.testing.expectEqualStrings("/run/user/1000", list.items[1]);
+    try std.testing.expectEqualStrings("/tmp", list.items[2]);
+    try std.testing.expectEqualStrings("/mnt/with space", list.items[3]);
+}
+
+test "buildExclusions includes Linux tmpfs mounts" {
+    if (builtin.os.tag != .linux) return;
+    const io = std.testing.io;
+    var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
+    defer arena_state.deinit();
+    const exclusions = try buildExclusions(arena_state.allocator(), io);
+
+    try std.testing.expect(exclusions.probe("/proc"));
+    try std.testing.expect(exclusions.probe("/dev"));
+    try std.testing.expect(exclusions.probe("/sys"));
+
+    // Typical systemd hosts expose at least one of these as tmpfs.
+    // Do not use `/dev/shm` here: it is already covered by the `/dev` prefix.
+    try std.testing.expect(exclusions.probe("/run") or exclusions.probe("/tmp"));
 }
 
 test "selective walk does not descend into excluded directories" {
