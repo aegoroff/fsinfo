@@ -49,7 +49,6 @@ const DirJob = struct {
 const DirQueue = struct {
     mutex: std.Io.Mutex = .init,
     not_empty: std.Io.Condition = .init,
-    not_full: std.Io.Condition = .init,
     items: std.ArrayList(DirJob) = .empty,
     capacity: usize,
     /// Directories pushed that have not finished `processDir` yet.
@@ -80,9 +79,7 @@ const DirQueue = struct {
             if (self.pending.load(.acquire) == 0) return null;
             self.not_empty.waitUncancelable(io, &self.mutex);
         }
-        const job = self.items.pop().?;
-        self.not_full.signal(io);
-        return job;
+        return self.items.pop().?;
     }
 
     fn markDone(self: *DirQueue, io: std.Io) void {
@@ -101,14 +98,41 @@ const WalkCtx = struct {
     rep: *reporter.Reporter,
     queue: *DirQueue,
 
-    fn submitDir(self: *WalkCtx, job: DirJob) void {
+    /// Enqueue `job`, or park it on `overflow` when the shared queue is full.
+    /// Without an overflow list (initial root submit), falls back to iterative `processDir`.
+    fn submitDir(self: *WalkCtx, job: DirJob, overflow: ?*std.ArrayList(DirJob)) void {
         _ = self.queue.pending.fetchAdd(1, .monotonic);
         if (self.queue.tryPush(self.io, job)) return;
-        // Queue full: process inline so workers never all block on push.
+        if (overflow) |o| {
+            o.append(self.gpa, job) catch {
+                // Overflow list OOM: still make progress without blocking all workers.
+                self.processDir(job);
+            };
+            return;
+        }
         self.processDir(job);
     }
 
+    /// Process `job` and any jobs that could not fit on the shared queue, iteratively
+    /// (no recursive `processDir` on queue-full — avoids stack overflow on wide trees).
     fn processDir(self: *WalkCtx, job: DirJob) void {
+        var overflow: std.ArrayList(DirJob) = .empty;
+        defer {
+            for (overflow.items) |leftover| {
+                leftover.deinit(self.io, self.gpa);
+                self.queue.markDone(self.io);
+            }
+            overflow.deinit(self.gpa);
+        }
+
+        var current: ?DirJob = job;
+        while (current) |j| {
+            self.processDirOne(j, &overflow);
+            current = overflow.pop();
+        }
+    }
+
+    fn processDirOne(self: *WalkCtx, job: DirJob, overflow: *std.ArrayList(DirJob)) void {
         defer {
             job.deinit(self.io, self.gpa);
             self.queue.markDone(self.io);
@@ -141,7 +165,7 @@ const WalkCtx = struct {
                         continue;
                     };
                     self.rep.addDir();
-                    self.submitDir(.{ .dir = child_dir, .rel_path = child_path });
+                    self.submitDir(.{ .dir = child_dir, .rel_path = child_path }, overflow);
                 },
                 else => {},
             }
@@ -240,7 +264,7 @@ pub fn walkParallel(
     var root_path: ?[]u8 = try gpa.alloc(u8, 0);
     errdefer if (root_path) |p| gpa.free(p);
 
-    ctx.submitDir(.{ .dir = root_dir.?, .rel_path = root_path.? });
+    ctx.submitDir(.{ .dir = root_dir.?, .rel_path = root_path.? }, null);
     root_dir = null;
     root_path = null;
 
