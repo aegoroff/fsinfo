@@ -2,8 +2,8 @@ optimize  := "ReleaseFast"
 target := "x86_64-linux-musl"
 cpu := "core2"
 
-build ver="0.1.2":
+build ver="0.2.0":
   mise exec zig@0.16 -- zig build  -Doptimize={{optimize}} -Dtarget={{target}} --summary all -Dcpu={{cpu}} -Dversion={{ver}}
 
-test ver="0.1.2":
+test ver="0.2.0":
   mise exec zig@0.16 -- zig build test -Doptimize={{optimize}} -Dtarget={{target}} --summary all -Dcpu={{cpu}} -Dversion={{ver}}

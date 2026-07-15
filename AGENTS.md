@@ -115,7 +115,7 @@ CI runs tests only for `x86_64-linux` builds (`mise.toml` task). Ensure tests pa
 - **Branches:** `master`, `develop`; PRs target `master`.
 - **CI:** `.github/workflows/ci_build.yml` — matrix build for Linux, Windows, macOS (x86_64 + aarch64).
 - **Releases:** Tags `v*` trigger changelog generation (`cliff.toml` / git-cliff) and GitHub release with `.tar.gz` artifacts.
-- **Version:** Passed at build time via `-Dversion=...` (`build_options.version` in code). Default: `0.1.0-dev`.
+- **Version:** Passed at build time via `-Dversion=...` (`build_options.version` in code). Default: `0.2.0-dev`.
 
 ## Commit and PR guidelines
 

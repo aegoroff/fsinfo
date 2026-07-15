@@ -40,7 +40,7 @@ The project includes build scripts for multiple platforms:
 
 ### Build Options
 
-- `--version`: Specify the version of the app (default: `0.1.0-dev`)
+- `--version`: Specify the version of the app (default: `0.2.0-dev`)
 - `--optimize`: Optimization level (Debug, ReleaseSafe, ReleaseFast, ReleaseSmall)
 
 Example:
