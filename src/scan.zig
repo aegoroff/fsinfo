@@ -100,62 +100,62 @@ const WalkCtx = struct {
     exclusions: lib.Exclusions,
     rep: *reporter.Reporter,
     queue: *DirQueue,
-};
 
-fn submitDir(ctx: *WalkCtx, job: DirJob) void {
-    _ = ctx.queue.pending.fetchAdd(1, .monotonic);
-    if (ctx.queue.tryPush(ctx.io, job)) return;
-    // Queue full: process inline so workers never all block on push.
-    processDir(ctx, job);
-}
-
-fn processDir(ctx: *WalkCtx, job: DirJob) void {
-    defer {
-        job.deinit(ctx.io, ctx.gpa);
-        ctx.queue.markDone(ctx.io);
+    fn submitDir(self: *WalkCtx, job: DirJob) void {
+        _ = self.queue.pending.fetchAdd(1, .monotonic);
+        if (self.queue.tryPush(self.io, job)) return;
+        // Queue full: process inline so workers never all block on push.
+        self.processDir(job);
     }
 
-    var it = job.dir.iterate();
-    while (true) {
-        const entry_or_null = it.next(ctx.io) catch {
-            continue;
-        };
-        const entry = entry_or_null orelse break;
-
-        switch (entry.kind) {
-            .file => {
-                const stat = job.dir.statFile(ctx.io, entry.name, .{ .follow_symlinks = false }) catch {
-                    continue;
-                };
-                ctx.rep.addFile(stat.size);
-            },
-            .directory => {
-                const child_path = joinRelPath(ctx.gpa, job.rel_path, entry.name) catch {
-                    continue;
-                };
-                if (ctx.exclusions.probe(child_path)) {
-                    ctx.gpa.free(child_path);
-                    continue;
-                }
-                const child_dir = job.dir.openDir(ctx.io, entry.name, open_options) catch {
-                    ctx.gpa.free(child_path);
-                    continue;
-                };
-                ctx.rep.addDir();
-                submitDir(ctx, .{ .dir = child_dir, .rel_path = child_path });
-            },
-            else => {},
+    fn processDir(self: *WalkCtx, job: DirJob) void {
+        defer {
+            job.deinit(self.io, self.gpa);
+            self.queue.markDone(self.io);
         }
-        ctx.rep.maybeRefreshProgress();
-    }
-}
 
-fn dirWorker(ctx: *WalkCtx) void {
-    while (true) {
-        const job = ctx.queue.popWait(ctx.io) orelse return;
-        processDir(ctx, job);
+        var it = job.dir.iterate();
+        while (true) {
+            const entry_or_null = it.next(self.io) catch {
+                continue;
+            };
+            const entry = entry_or_null orelse break;
+
+            switch (entry.kind) {
+                .file => {
+                    const stat = job.dir.statFile(self.io, entry.name, .{ .follow_symlinks = false }) catch {
+                        continue;
+                    };
+                    self.rep.addFile(stat.size);
+                },
+                .directory => {
+                    const child_path = joinRelPath(self.gpa, job.rel_path, entry.name) catch {
+                        continue;
+                    };
+                    if (self.exclusions.probe(child_path)) {
+                        self.gpa.free(child_path);
+                        continue;
+                    }
+                    const child_dir = job.dir.openDir(self.io, entry.name, open_options) catch {
+                        self.gpa.free(child_path);
+                        continue;
+                    };
+                    self.rep.addDir();
+                    self.submitDir(.{ .dir = child_dir, .rel_path = child_path });
+                },
+                else => {},
+            }
+            self.rep.maybeRefreshProgress();
+        }
     }
-}
+
+    fn worker(self: *WalkCtx) void {
+        while (true) {
+            const job = self.queue.popWait(self.io) orelse return;
+            self.processDir(job);
+        }
+    }
+};
 
 /// Selective walk: only descend into directories that are not excluded.
 /// Plain `walk` enters every directory before returning the entry, so
@@ -240,7 +240,7 @@ pub fn walkParallel(
     var root_path: ?[]u8 = try gpa.alloc(u8, 0);
     errdefer if (root_path) |p| gpa.free(p);
 
-    submitDir(&ctx, .{ .dir = root_dir.?, .rel_path = root_path.? });
+    ctx.submitDir(.{ .dir = root_dir.?, .rel_path = root_path.? });
     root_dir = null;
     root_path = null;
 
@@ -248,7 +248,7 @@ pub fn walkParallel(
     errdefer group.cancel(io);
 
     for (0..jobs) |_| {
-        try group.concurrent(io, dirWorker, .{&ctx});
+        try group.concurrent(io, WalkCtx.worker, .{&ctx});
     }
     try group.await(io);
 }
