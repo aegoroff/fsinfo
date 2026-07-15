@@ -10,7 +10,7 @@ A non-interactive file system information tool implemented in Zig.
 - Total size of all files (sum of sizes per directory entry; hard-linked names are counted separately)
 - Time taken for the analysis
 
-The tool automatically excludes system directories like `/proc`, `/dev`, and `/sys` during scanning and provides progress updates during the analysis. Directory symlinks are not followed.
+The tool automatically excludes system directories like `/proc`, `/dev`, and `/sys` during scanning and provides progress updates during the analysis. Directory symlinks are not followed. If `PATH` itself is one of those directories (or lies inside them), `fsinfo` refuses to scan and exits with an error.
 
 ## Requirements
 
@@ -83,6 +83,10 @@ fsinfo --jobs 1 .
 
 # Analyze root filesystem (excluding /proc, /dev, /sys)
 fsinfo /
+
+# These fail: PATH itself is under a default exclusion
+# fsinfo /proc
+# fsinfo /sys
 ```
 
 ### Output Format

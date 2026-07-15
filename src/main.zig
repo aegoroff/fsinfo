@@ -28,6 +28,18 @@ pub fn main(init: std.process.Init) !void {
     var dir = try std.Io.Dir.cwd().openDir(init.io, opts.path, scan.open_options);
     defer dir.close(init.io);
 
+    scan.ensureRootAllowed(init.io, dir, scan.default_exclusions) catch |err| {
+        if (err == error.PathExcluded) {
+            var stderr_buffer: [256]u8 = undefined;
+            var stderr_writer = std.Io.File.stderr().writer(init.io, &stderr_buffer);
+            const stderr = &stderr_writer.interface;
+            stderr.print("error: path is excluded from scanning ({s})\n", .{opts.path}) catch {};
+            stderr.flush() catch {};
+            std.process.exit(2);
+        }
+        return err;
+    };
+
     var rep = reporter.Reporter.init(init.io);
     defer rep.finish(stdout);
 

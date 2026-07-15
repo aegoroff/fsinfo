@@ -14,6 +14,18 @@ pub const default_exclusions = lib.Exclusions{
     .haystack = &default_exclusion_paths,
 };
 
+/// Rejects a scan when the opened root resolves to a default-excluded path
+/// (e.g. `fsinfo /proc` or `fsinfo /proc/1`).
+pub fn ensureRootAllowed(
+    io: std.Io,
+    dir: std.Io.Dir,
+    exclusions: lib.Exclusions,
+) (std.Io.Dir.RealPathError || error{PathExcluded})!void {
+    var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const n = try dir.realPath(io, &buf);
+    if (exclusions.probe(buf[0..n])) return error.PathExcluded;
+}
+
 const queue_slots_per_job: usize = 64;
 
 fn cloneDir(io: std.Io, dir: std.Io.Dir) std.Io.Dir.OpenError!std.Io.Dir {
@@ -282,6 +294,23 @@ pub fn walkParallel(
         try group.concurrent(io, WalkCtx.worker, .{&ctx});
     }
     try group.await(io);
+}
+
+test "ensureRootAllowed rejects excluded absolute roots" {
+    if (builtin.os.tag != .linux) return;
+    const io = std.testing.io;
+
+    var proc_dir = std.Io.Dir.cwd().openDir(io, "/proc", open_options) catch return;
+    defer proc_dir.close(io);
+    try std.testing.expectError(error.PathExcluded, ensureRootAllowed(io, proc_dir, default_exclusions));
+
+    var proc_child = std.Io.Dir.cwd().openDir(io, "/proc/1", open_options) catch return;
+    defer proc_child.close(io);
+    try std.testing.expectError(error.PathExcluded, ensureRootAllowed(io, proc_child, default_exclusions));
+
+    var usr_dir = try std.Io.Dir.cwd().openDir(io, "/usr", open_options);
+    defer usr_dir.close(io);
+    try ensureRootAllowed(io, usr_dir, default_exclusions);
 }
 
 test "selective walk does not descend into excluded directories" {
