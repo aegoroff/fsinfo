@@ -45,7 +45,7 @@ The project includes build scripts for multiple platforms:
 
 Example:
 ```bash
-zig build -Dversion=0.1.0 -Doptimize=ReleaseSafe
+zig build -Dversion=0.2.0 -Doptimize=ReleaseSafe
 ```
 
 ### Running Tests
