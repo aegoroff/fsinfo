@@ -50,7 +50,7 @@ jobs:
             processor: apple_m1
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Query version number
         id: get_version
         shell: bash
@@ -61,7 +61,7 @@ jobs:
             echo "version=0.1.0-dev" >> "$GITHUB_OUTPUT"
           fi
       - name: Install mise and tools
-        uses: jdx/mise-action@v2
+        uses: jdx/mise-action@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -81,7 +81,7 @@ jobs:
           mkdir -p ${{ env.RELEASE_DIR }}
           cp -v ./zig-out/*.gz ./${{ env.RELEASE_DIR }}/
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.os }}_${{ matrix.abi }}_${{ matrix.arch }}
           path: ./${{ env.RELEASE_DIR }}
@@ -94,7 +94,7 @@ jobs:
       release_body: ${{ steps.git-cliff.outputs.content }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Generate a changelog
@@ -123,12 +123,12 @@ jobs:
           fi
 
       - name: Download artefacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: release
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.get_version.outputs.version }}
           body: "${{ needs.generate-changelog.outputs.release_body }}"
