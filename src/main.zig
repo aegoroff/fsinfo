@@ -37,7 +37,8 @@ pub fn main(init: std.process.Init) !void {
     const matches = try app.parseProcess(init.io, init.minimal.args);
     const source = matches.getSingleValue("PATH");
 
-    var dir = try std.Io.Dir.openDirAbsolute(init.io, source.?, .{ .iterate = true });
+    // `openDir` accepts both absolute and relative PATH (e.g. `.`); absolute-only API asserts.
+    var dir = try std.Io.Dir.cwd().openDir(init.io, source.?, .{ .iterate = true });
     // Selective walk: only descend into directories that are not excluded.
     // Plain `walk` enters every directory before returning the entry, so
     // skipping an excluded path with `continue` would still traverse children.
@@ -106,6 +107,20 @@ test "selective walk does not descend into excluded directories" {
     try std.testing.expect(seen_keep_a);
     try std.testing.expect(!seen_proc);
     try std.testing.expect(!seen_secret);
+}
+
+test "openDir accepts relative and absolute scan roots" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{ .iterate = true });
+    defer tmp.cleanup();
+
+    try tmp.dir.createDir(io, "sub", .default_dir);
+
+    var relative = try tmp.dir.openDir(io, "sub", .{ .iterate = true });
+    defer relative.close(io);
+
+    var dot = try tmp.dir.openDir(io, ".", .{ .iterate = true });
+    defer dot.close(io);
 }
 
 test {
