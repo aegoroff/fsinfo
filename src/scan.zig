@@ -16,7 +16,7 @@ pub const default_exclusions = lib.Exclusions{
 
 const queue_slots_per_job: usize = 64;
 
-fn cloneDir(io: std.Io, dir: std.Io.Dir) !std.Io.Dir {
+fn cloneDir(io: std.Io, dir: std.Io.Dir) std.Io.Dir.OpenError!std.Io.Dir {
     if (builtin.os.tag == .windows) {
         return dir.openDir(io, ".", open_options);
     } else {
@@ -218,7 +218,7 @@ pub fn walkParallel(
     exclusions: lib.Exclusions,
     rep: *reporter.Reporter,
     jobs: usize,
-) (std.mem.Allocator.Error || std.Io.Cancelable || std.Io.ConcurrentError || std.Io.UnexpectedError)!void {
+) (std.mem.Allocator.Error || std.Io.ConcurrentError || std.Io.Dir.OpenError)!void {
     std.debug.assert(jobs >= 2);
 
     var queue: DirQueue = .{
