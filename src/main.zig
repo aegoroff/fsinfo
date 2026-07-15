@@ -13,11 +13,7 @@ pub fn main(init: std.process.Init) !void {
 
     const opts = cli.parse(init.gpa, init.io, init.minimal.args) catch |err| {
         if (err == error.InvalidJobs) {
-            var stderr_buffer: [256]u8 = undefined;
-            var stderr_writer = std.Io.File.stderr().writer(init.io, &stderr_buffer);
-            const stderr = &stderr_writer.interface;
-            stderr.print("error: --jobs must be between 1 and {d}\n", .{cli.maxJobs()}) catch {};
-            stderr.flush() catch {};
+            std.log.err("--jobs must be between 1 and {d}", .{cli.maxJobs()});
             std.process.exit(2);
         }
         return err;
@@ -30,11 +26,7 @@ pub fn main(init: std.process.Init) !void {
 
     scan.ensureRootAllowed(init.io, dir, scan.default_exclusions) catch |err| {
         if (err == error.PathExcluded) {
-            var stderr_buffer: [256]u8 = undefined;
-            var stderr_writer = std.Io.File.stderr().writer(init.io, &stderr_buffer);
-            const stderr = &stderr_writer.interface;
-            stderr.print("error: path is excluded from scanning ({s})\n", .{opts.path}) catch {};
-            stderr.flush() catch {};
+            std.log.err("path is excluded from scanning ({s})", .{opts.path});
             std.process.exit(2);
         }
         return err;
