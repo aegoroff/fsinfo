@@ -4,6 +4,9 @@ const scan = @import("scan.zig");
 const cli = @import("cli.zig");
 
 pub fn main(init: std.process.Init) !void {
+    // Parallel walk can hold many directory FDs (queue + in-flight); raise soft NOFILE first.
+    std.process.raiseFileDescriptorLimit();
+
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_writer = std.Io.File.stdout().writer(init.io, &stdout_buffer);
     const stdout = &stdout_writer.interface;

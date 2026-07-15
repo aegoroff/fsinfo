@@ -105,6 +105,51 @@ pub fn ensureRootAllowed(
 }
 
 const queue_slots_per_job: usize = 64;
+/// Cap for DirJobs parked on a worker's local overflow list. Without this, a wide
+/// directory (e.g. `node_modules`) opens every child FD before any is processed.
+const max_local_overflow: usize = 32;
+/// Leave headroom for stdio, the scan root handle, misc Zig Io internals.
+const fd_reserve: usize = 64;
+
+fn isFdQuotaExceeded(err: anyerror) bool {
+    return err == error.ProcessFdQuotaExceeded or err == error.SystemFdQuotaExceeded;
+}
+
+fn softNofileLimit() ?usize {
+    if (builtin.os.tag == .windows) return null;
+    const lim = std.posix.getrlimit(.NOFILE) catch return null;
+    return std.math.cast(usize, lim.cur);
+}
+
+/// How many owning directory FDs the parallel walk may hold at once.
+fn dirFdBudget(jobs: usize) usize {
+    const fallback = jobs * queue_slots_per_job + jobs;
+    const soft = softNofileLimit() orelse return fallback;
+    if (soft <= fd_reserve) return @max(jobs * 2, 2);
+    return soft - fd_reserve;
+}
+
+/// Shared-queue capacity so queue + per-worker overflow still leave `jobs` free FD slots
+/// for in-progress `openDir` calls (avoids deadlock when the budget is saturated).
+fn queueCapacity(jobs: usize, budget_max: usize, overflow_cap: usize) usize {
+    const per_worker = 1 + overflow_cap;
+    const reserved_for_opens = jobs;
+    const max_parked = budget_max -| reserved_for_opens;
+    const worker_park = jobs *| per_worker;
+    const for_queue = max_parked -| worker_park;
+    return @min(
+        std.math.mul(usize, jobs, queue_slots_per_job) catch for_queue,
+        @max(for_queue, jobs),
+    );
+}
+
+fn overflowCap(jobs: usize, budget_max: usize) usize {
+    // Keep overflow small enough that jobs * (1 + cap) fits in roughly half the budget.
+    const half = budget_max / 2;
+    const per = half / @max(jobs, 1);
+    if (per <= 1) return 1;
+    return @min(max_local_overflow, per - 1);
+}
 
 fn cloneDir(io: std.Io, dir: std.Io.Dir) std.Io.Dir.OpenError!std.Io.Dir {
     if (builtin.os.tag == .windows) {
@@ -138,10 +183,37 @@ const DirJob = struct {
     dir: std.Io.Dir,
     /// Relative path from the scan root; empty for the root job itself.
     rel_path: []u8,
+};
 
-    fn deinit(self: DirJob, io: std.Io, gpa: std.mem.Allocator) void {
-        self.dir.close(io);
-        gpa.free(self.rel_path);
+/// Caps concurrent open directory FDs held by DirJobs (queued, overflow, or in-flight).
+const FdBudget = struct {
+    mutex: std.Io.Mutex = .init,
+    has_room: std.Io.Condition = .init,
+    used: usize = 0,
+    max: usize,
+
+    fn acquire(self: *FdBudget, io: std.Io) void {
+        self.mutex.lockUncancelable(io);
+        defer self.mutex.unlock(io);
+        while (self.used >= self.max) {
+            self.has_room.waitUncancelable(io, &self.mutex);
+        }
+        self.used += 1;
+    }
+
+    fn tryAcquire(self: *FdBudget, io: std.Io) bool {
+        self.mutex.lockUncancelable(io);
+        defer self.mutex.unlock(io);
+        if (self.used >= self.max) return false;
+        self.used += 1;
+        return true;
+    }
+
+    fn release(self: *FdBudget, io: std.Io) void {
+        self.mutex.lockUncancelable(io);
+        defer self.mutex.unlock(io);
+        self.used -= 1;
+        self.has_room.signal(io);
     }
 };
 
@@ -154,9 +226,11 @@ const DirQueue = struct {
     pending: std.atomic.Value(usize) = .init(0),
     gpa: std.mem.Allocator,
 
-    fn deinit(self: *DirQueue, io: std.Io) void {
+    fn deinit(self: *DirQueue, io: std.Io, budget: *FdBudget) void {
         for (self.items.items) |job| {
-            job.deinit(io, self.gpa);
+            job.dir.close(io);
+            self.gpa.free(job.rel_path);
+            budget.release(io);
         }
         self.items.deinit(self.gpa);
     }
@@ -196,7 +270,16 @@ const WalkCtx = struct {
     exclusions: lib.Exclusions,
     rep: *reporter.Reporter,
     queue: *DirQueue,
+    budget: *FdBudget,
+    overflow_cap: usize,
     verbose: bool,
+
+    fn finishJob(self: *WalkCtx, job: DirJob) void {
+        job.dir.close(self.io);
+        self.gpa.free(job.rel_path);
+        self.budget.release(self.io);
+        self.queue.markDone(self.io);
+    }
 
     /// Enqueue `job`, or park it on `overflow` when the shared queue is full.
     /// Without an overflow list (initial root submit), falls back to iterative `processDir`.
@@ -214,14 +297,22 @@ const WalkCtx = struct {
         self.processDir(job);
     }
 
+    /// Process parked overflow jobs (each gets its own nested overflow) until at most
+    /// `keep_at_most` remain. Frees directory FDs before opening more children of a wide parent.
+    fn drainOverflow(self: *WalkCtx, overflow: *std.ArrayList(DirJob), keep_at_most: usize) void {
+        while (overflow.items.len > keep_at_most) {
+            const parked = overflow.pop().?;
+            self.processDir(parked);
+        }
+    }
+
     /// Process `job` and any jobs that could not fit on the shared queue, iteratively
     /// (no recursive `processDir` on queue-full — avoids stack overflow on wide trees).
     fn processDir(self: *WalkCtx, job: DirJob) void {
         var overflow: std.ArrayList(DirJob) = .empty;
         defer {
             for (overflow.items) |leftover| {
-                leftover.deinit(self.io, self.gpa);
-                self.queue.markDone(self.io);
+                self.finishJob(leftover);
             }
             overflow.deinit(self.gpa);
         }
@@ -233,10 +324,51 @@ const WalkCtx = struct {
         }
     }
 
+    fn acquireForOpen(self: *WalkCtx, overflow: *std.ArrayList(DirJob)) void {
+        while (!self.budget.tryAcquire(self.io)) {
+            // Drain our overflow first — those FDs are ours to finish.
+            // Do not steal from the shared queue while holding a parent FD: that nests
+            // processDir under budget pressure and can deadlock.
+            if (overflow.items.len > 0) {
+                self.processDir(overflow.pop().?);
+                continue;
+            }
+            self.budget.acquire(self.io);
+            return;
+        }
+    }
+
+    fn openChildDir(
+        self: *WalkCtx,
+        parent: std.Io.Dir,
+        child_path: []const u8,
+        overflow: *std.ArrayList(DirJob),
+    ) ?std.Io.Dir {
+        const basename = std.fs.path.basename(child_path);
+        while (true) {
+            self.acquireForOpen(overflow);
+            const child_dir = parent.openDir(self.io, basename, open_options) catch |err| {
+                self.budget.release(self.io);
+                if (isFdQuotaExceeded(err) and overflow.items.len > 0) {
+                    self.drainOverflow(overflow, 0);
+                    continue;
+                }
+                logSkip(self.verbose, "openDir", child_path, err);
+                return null;
+            };
+            return child_dir;
+        }
+    }
+
     fn processDirOne(self: *WalkCtx, job: DirJob, overflow: *std.ArrayList(DirJob)) void {
+        defer self.finishJob(job);
+
+        // Collect directory paths first so a wide parent does not open every child
+        // FD before any parked overflow work can run (avoids ProcessFdQuotaExceeded).
+        var pending_dirs: std.ArrayList([]u8) = .empty;
         defer {
-            job.deinit(self.io, self.gpa);
-            self.queue.markDone(self.io);
+            for (pending_dirs.items) |p| self.gpa.free(p);
+            pending_dirs.deinit(self.gpa);
         }
 
         var it = job.dir.iterate();
@@ -266,17 +398,34 @@ const WalkCtx = struct {
                     self.rep.addFile(stat.size);
                 },
                 .directory => {
-                    const child_dir = job.dir.openDir(self.io, entry.name, open_options) catch |err| {
-                        logSkip(self.verbose, "openDir", child_path, err);
-                        self.gpa.free(child_path);
-                        continue;
+                    pending_dirs.append(self.gpa, child_path) catch |err| {
+                        // OOM: fall back to opening this child immediately.
+                        logSkip(self.verbose, "pending dir", child_path, err);
+                        const keep = if (self.overflow_cap > 0) self.overflow_cap - 1 else 0;
+                        self.drainOverflow(overflow, keep);
+                        if (self.openChildDir(job.dir, child_path, overflow)) |child_dir| {
+                            self.rep.addDir();
+                            self.submitDir(.{ .dir = child_dir, .rel_path = child_path }, overflow);
+                        } else {
+                            self.gpa.free(child_path);
+                        }
                     };
-                    self.rep.addDir();
-                    self.submitDir(.{ .dir = child_dir, .rel_path = child_path }, overflow);
                 },
                 else => {
                     self.gpa.free(child_path);
                 },
+            }
+            self.rep.maybeRefreshProgress();
+        }
+
+        while (pending_dirs.pop()) |child_path| {
+            const keep = if (self.overflow_cap > 0) self.overflow_cap - 1 else 0;
+            self.drainOverflow(overflow, keep);
+            if (self.openChildDir(job.dir, child_path, overflow)) |child_dir| {
+                self.rep.addDir();
+                self.submitDir(.{ .dir = child_dir, .rel_path = child_path }, overflow);
+            } else {
+                self.gpa.free(child_path);
             }
             self.rep.maybeRefreshProgress();
         }
@@ -359,14 +508,16 @@ pub fn walkParallel(
 ) (std.mem.Allocator.Error || std.Io.ConcurrentError || std.Io.Dir.OpenError)!void {
     std.debug.assert(jobs >= 2);
 
-    const capacity = std.math.mul(usize, jobs, queue_slots_per_job) catch {
-        return error.OutOfMemory;
-    };
+    const budget_max = dirFdBudget(jobs);
+    const overflow_cap = overflowCap(jobs, budget_max);
+    const capacity = queueCapacity(jobs, budget_max, overflow_cap);
+
+    var budget: FdBudget = .{ .max = budget_max };
     var queue: DirQueue = .{
         .capacity = capacity,
         .gpa = gpa,
     };
-    defer queue.deinit(io);
+    defer queue.deinit(io, &budget);
 
     var ctx: WalkCtx = .{
         .io = io,
@@ -374,11 +525,17 @@ pub fn walkParallel(
         .exclusions = exclusions,
         .rep = rep,
         .queue = &queue,
+        .budget = &budget,
+        .overflow_cap = overflow_cap,
         .verbose = verbose,
     };
 
+    budget.acquire(io);
     var root_dir: ?std.Io.Dir = try cloneDir(io, dir);
-    errdefer if (root_dir) |d| d.close(io);
+    errdefer {
+        if (root_dir) |d| d.close(io);
+        budget.release(io);
+    }
     var root_path: ?[]u8 = try gpa.alloc(u8, 0);
     errdefer if (root_path) |p| gpa.free(p);
 
