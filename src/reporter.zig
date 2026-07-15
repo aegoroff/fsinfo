@@ -1,5 +1,5 @@
 const std = @import("std");
-const portion_size: u64 = 1024;
+const progress_portion: u64 = 1024;
 
 pub const Reporter = struct {
     total_size: u64,
@@ -31,7 +31,7 @@ pub const Reporter = struct {
         };
     }
 
-    pub fn update(self: *Reporter, entry: *std.Io.Dir.Walker.Entry) void {
+    pub fn update(self: *Reporter, entry: *const std.Io.Dir.Walker.Entry) void {
         switch (entry.kind) {
             std.Io.File.Kind.file => {
                 const stat = entry.dir.statFile(self.io, entry.basename, .{ .follow_symlinks = false }) catch {
@@ -76,7 +76,7 @@ pub const Reporter = struct {
 };
 
 fn shouldUpdateProgress(file_count: u64) bool {
-    return file_count >= portion_size and file_count % portion_size == 0;
+    return file_count >= progress_portion and file_count % progress_portion == 0;
 }
 
 fn elapsedSeconds(duration: std.Io.Duration) usize {
