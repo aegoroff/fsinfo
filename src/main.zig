@@ -38,7 +38,10 @@ pub fn main(init: std.process.Init) !void {
     const source = matches.getSingleValue("PATH");
 
     var dir = try std.Io.Dir.openDirAbsolute(init.io, source.?, .{ .iterate = true });
-    var walker = try dir.walk(allocator);
+    // Selective walk: only descend into directories that are not excluded.
+    // Plain `walk` enters every directory before returning the entry, so
+    // skipping an excluded path with `continue` would still traverse children.
+    var walker = try dir.walkSelectively(allocator);
     defer walker.deinit();
 
     const exclusions = lib.Exlusions{
@@ -57,8 +60,52 @@ pub fn main(init: std.process.Init) !void {
         if (exclusions.probe(entry.path)) {
             continue;
         }
+        if (entry.kind == .directory) {
+            walker.enter(init.io, entry) catch {
+                continue;
+            };
+        }
         rep.update(&entry);
     }
+}
+
+test "selective walk does not descend into excluded directories" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{ .iterate = true });
+    defer tmp.cleanup();
+
+    try tmp.dir.createDir(io, "keep", .default_dir);
+    try tmp.dir.createDir(io, "proc", .default_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = "keep/a.txt", .data = "a" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "proc/secret.txt", .data = "secret" });
+
+    const exclusions = lib.Exlusions{
+        .haystack = &[_][]const u8{"/proc"},
+    };
+
+    var walker = try tmp.dir.walkSelectively(std.testing.allocator);
+    defer walker.deinit();
+
+    var seen_keep_a = false;
+    var seen_proc = false;
+    var seen_secret = false;
+
+    while (true) {
+        const entry = (try walker.next(io)) orelse break;
+        if (exclusions.probe(entry.path)) {
+            continue;
+        }
+        if (entry.kind == .directory) {
+            try walker.enter(io, entry);
+        }
+        if (std.mem.eql(u8, entry.path, "keep/a.txt")) seen_keep_a = true;
+        if (std.mem.eql(u8, entry.path, "proc")) seen_proc = true;
+        if (std.mem.eql(u8, entry.path, "proc/secret.txt")) seen_secret = true;
+    }
+
+    try std.testing.expect(seen_keep_a);
+    try std.testing.expect(!seen_proc);
+    try std.testing.expect(!seen_secret);
 }
 
 test {
