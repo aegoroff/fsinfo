@@ -145,21 +145,23 @@ const WalkCtx = struct {
             };
             const entry = entry_or_null orelse break;
 
+            const child_path = joinRelPath(self.gpa, job.rel_path, entry.name) catch {
+                continue;
+            };
+            if (self.exclusions.probe(child_path)) {
+                self.gpa.free(child_path);
+                continue;
+            }
+
             switch (entry.kind) {
                 .file => {
+                    defer self.gpa.free(child_path);
                     const stat = job.dir.statFile(self.io, entry.name, .{ .follow_symlinks = false }) catch {
                         continue;
                     };
                     self.rep.addFile(stat.size);
                 },
                 .directory => {
-                    const child_path = joinRelPath(self.gpa, job.rel_path, entry.name) catch {
-                        continue;
-                    };
-                    if (self.exclusions.probe(child_path)) {
-                        self.gpa.free(child_path);
-                        continue;
-                    }
                     const child_dir = job.dir.openDir(self.io, entry.name, open_options) catch {
                         self.gpa.free(child_path);
                         continue;
@@ -167,7 +169,9 @@ const WalkCtx = struct {
                     self.rep.addDir();
                     self.submitDir(.{ .dir = child_dir, .rel_path = child_path }, overflow);
                 },
-                else => {},
+                else => {
+                    self.gpa.free(child_path);
+                },
             }
             self.rep.maybeRefreshProgress();
         }
@@ -371,10 +375,11 @@ test "parallel walk matches serial totals" {
     try tmp.dir.writeFile(io, .{ .sub_path = "a/b/y.txt", .data = "yyy" });
     try tmp.dir.writeFile(io, .{ .sub_path = "proc/secret.txt", .data = "nope" });
     try tmp.dir.writeFile(io, .{ .sub_path = "real/hidden.txt", .data = "x" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "ignored.txt", .data = "skip" });
     try tmp.dir.symLink(io, "real", "link", .{ .is_directory = true });
 
     const exclusions = lib.Exclusions{
-        .haystack = &[_][]const u8{"/proc"},
+        .haystack = &[_][]const u8{ "/proc", "/ignored.txt" },
     };
 
     // Avoid a second `Reporter`/`Progress.start` in the same process: count serial via visitor.
@@ -411,7 +416,7 @@ test "parallel walk matches serial totals" {
     try std.testing.expectEqual(serial.files, parallel_files);
     try std.testing.expectEqual(serial.dirs, parallel_dirs);
     try std.testing.expectEqual(serial.bytes, parallel_bytes);
-    // keep/, a/, a/b/, real/ — not proc/, not via link/
+    // a/, a/b/, real/ — not proc/, not via link/; ignored.txt excluded as a file
     try std.testing.expectEqual(@as(u64, 4), serial.files);
     try std.testing.expectEqual(@as(u64, 3), serial.dirs);
     try std.testing.expectEqual(@as(u64, 4 + 2 + 3 + 1), serial.bytes);
