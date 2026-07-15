@@ -65,17 +65,21 @@ This creates a tar.gz archive in the output directory.
 ## Usage
 
 ```bash
-fsinfo <PATH>
+fsinfo [OPTIONS] <PATH>
 ```
+
+| Option | Description |
+|--------|-------------|
+| `-j`, `--jobs N` | Parallel `stat` workers. Default: `1` (single-threaded). Raise on trees where parallel helps (try e.g. `-j` half your CPU count). |
 
 ### Examples
 
 ```bash
-# Analyze current directory
+# Analyze current directory (default: single-threaded)
 fsinfo .
 
-# Analyze a specific directory
-fsinfo /home/user/documents
+# Parallel stats (opt-in; can help or hurt depending on the tree)
+fsinfo -j 8 /usr
 
 # Analyze root filesystem (excluding /proc, /dev, /sys)
 fsinfo /
@@ -99,7 +103,7 @@ Time taken:         2.5s
 
 ## Features
 
-- Fast file system traversal
+- Fast file system traversal with optional parallel file stats (`--jobs`)
 - Progress indicators for files and directories
 - Automatic exclusion of system directories (`/proc`, `/dev`, `/sys`)
 - Does not follow directory symlinks; does not cross into excluded system trees

@@ -2,9 +2,11 @@ const std = @import("std");
 const progress_portion: u64 = 1024;
 
 pub const Reporter = struct {
-    total_size: u64,
-    total_file_count: u64,
-    total_dir_count: u64,
+    total_size: std.atomic.Value(u64),
+    total_file_count: std.atomic.Value(u64),
+    total_dir_count: std.atomic.Value(u64),
+    /// Walk-thread only: next file count that should refresh progress UI.
+    next_progress_at: u64,
     progress: std.Progress.Node,
     directories_progress: std.Progress.Node,
     files_progress: std.Progress.Node,
@@ -20,9 +22,10 @@ pub const Reporter = struct {
         const files_progress = progress.start("Files", 0);
 
         return Reporter{
-            .total_size = 0,
-            .total_file_count = 0,
-            .total_dir_count = 0,
+            .total_size = .init(0),
+            .total_file_count = .init(0),
+            .total_dir_count = .init(0),
+            .next_progress_at = progress_portion,
             .progress = progress,
             .directories_progress = directories_progress,
             .files_progress = files_progress,
@@ -31,25 +34,51 @@ pub const Reporter = struct {
         };
     }
 
+    pub fn addDir(self: *Reporter) void {
+        _ = self.total_dir_count.fetchAdd(1, .monotonic);
+    }
+
+    pub fn addFile(self: *Reporter, size: u64) void {
+        _ = self.total_file_count.fetchAdd(1, .monotonic);
+        _ = self.total_size.fetchAdd(size, .monotonic);
+    }
+
+    pub fn fileCount(self: *const Reporter) u64 {
+        return self.total_file_count.load(.monotonic);
+    }
+
+    pub fn dirCount(self: *const Reporter) u64 {
+        return self.total_dir_count.load(.monotonic);
+    }
+
+    pub fn byteCount(self: *const Reporter) u64 {
+        return self.total_size.load(.monotonic);
+    }
+
+    /// Safe to call from the walk thread while workers mutate atomics.
+    pub fn maybeRefreshProgress(self: *Reporter) void {
+        const files = self.fileCount();
+        if (files < self.next_progress_at) return;
+        self.next_progress_at = files - (files % progress_portion) + progress_portion;
+        self.files_progress.setCompletedItems(@intCast(files));
+        self.directories_progress.setCompletedItems(@intCast(self.dirCount()));
+        self.progress.setCompletedItems(elapsedSeconds(self.start.durationTo(std.Io.Clock.real.now(self.io))));
+    }
+
     pub fn update(self: *Reporter, entry: *const std.Io.Dir.Walker.Entry) void {
         switch (entry.kind) {
             std.Io.File.Kind.file => {
                 const stat = entry.dir.statFile(self.io, entry.basename, .{ .follow_symlinks = false }) catch {
                     return;
                 };
-                self.total_file_count += 1;
-                self.total_size += stat.size;
+                self.addFile(stat.size);
             },
             std.Io.File.Kind.directory => {
-                self.total_dir_count += 1;
+                self.addDir();
             },
             else => {},
         }
-        if (shouldUpdateProgress(self.total_file_count)) {
-            self.files_progress.setCompletedItems(@intCast(self.total_file_count));
-            self.directories_progress.setCompletedItems(@intCast(self.total_dir_count));
-            self.progress.setCompletedItems(elapsedSeconds(self.start.durationTo(std.Io.Clock.real.now(self.io))));
-        }
+        self.maybeRefreshProgress();
     }
 
     pub fn finish(self: *Reporter, writer: *std.Io.Writer) void {
@@ -64,9 +93,9 @@ pub const Reporter = struct {
             "Total files:",
             "Total directories:",
             "Total files size:",
-            self.total_file_count,
-            self.total_dir_count,
-            self.total_size,
+            self.fileCount(),
+            self.dirCount(),
+            self.byteCount(),
             "Time taken:",
         };
         writer.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5Bi:.2} ({5} bytes)\n{6s:<19} ", print_args) catch {};
