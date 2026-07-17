@@ -337,15 +337,12 @@ const WalkCtx = struct {
         self.processDir(job);
     }
 
-    /// Drain parked overflow jobs, finishing (not recursively processing) each one.
-    /// Finishing guarantees forward progress: each iteration releases one FD budget
-    /// slot without acquiring new ones, preventing deadlock under deep/wide trees.
-    /// Subtrees rooted at drained jobs are skipped — logged when `verbose` is set.
+    /// Process parked overflow jobs (each gets its own nested overflow) until at most
+    /// `keep_at_most` remain. Frees directory FDs before opening more children of a wide parent.
     fn drainOverflow(self: *WalkCtx, overflow: *std.ArrayList(DirJob), keep_at_most: usize) void {
         while (overflow.items.len > keep_at_most) {
             const parked = overflow.pop().?;
-            logSkip(self.verbose, "overflow drain", parked.rel_path, error.SystemResources);
-            self.finishJob(parked);
+            self.processDir(parked);
         }
     }
 
@@ -370,16 +367,13 @@ const WalkCtx = struct {
     }
 
     /// Try to acquire one FD budget slot for opening a child directory.
-    /// Under budget pressure, releases parked overflow FDs (via `finishJob`)
-    /// instead of recursively processing them — guarantees forward progress
-    /// and avoids the frozen-overflow deadlock.
-    /// Returns `false` if the walk was cancelled; the caller must not open the child.
+    /// Under budget pressure, processes parked overflow jobs (freeing their FDs)
+    /// before blocking. Returns `false` if the walk was cancelled; the caller
+    /// must not open the child.
     fn acquireForOpen(self: *WalkCtx, overflow: *std.ArrayList(DirJob)) bool {
         while (!self.budget.tryAcquire(self.io)) {
             if (overflow.items.len > 0) {
-                const parked = overflow.pop().?;
-                logSkip(self.verbose, "budget pressure", parked.rel_path, error.SystemResources);
-                self.finishJob(parked);
+                self.processDir(overflow.pop().?);
                 continue;
             }
             if (!self.budget.acquireCancelable(self.io, &self.cancelled)) return false;
