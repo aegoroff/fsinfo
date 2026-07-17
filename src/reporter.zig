@@ -1,5 +1,6 @@
 const std = @import("std");
 const histogram = @import("histogram.zig");
+const grouped_int = @import("grouped_int.zig");
 const progress_portion: u64 = 1024;
 
 pub const Reporter = struct {
@@ -127,13 +128,13 @@ pub const Reporter = struct {
             "Total files:",
             "Total directories:",
             "Total files size:",
-            files,
-            dirs,
+            grouped_int.fmt(files),
+            grouped_int.fmt(dirs),
             bytes,
             "Time taken:",
         };
         writer.print(
-            "{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5Bi:.2} ({5} bytes)\n{6s:<19} ",
+            "{0s:<19} {3f}\n{1s:<19} {4f}\n{2s:<19} {5Bi:.2} ({5} bytes)\n{6s:<19} ",
             print_args,
         ) catch {};
         duration.format(writer) catch {};

@@ -1,4 +1,5 @@
 const std = @import("std");
+const grouped_int = @import("grouped_int.zig");
 
 const kib = 1024;
 const mib = 1024 * kib;
@@ -98,7 +99,7 @@ pub const Histogram = struct {
             const size_pct = percent(size, total_size);
 
             const num_s = std.fmt.allocPrint(arena, "{d}", .{i + 1}) catch continue;
-            const count_s = std.fmt.allocPrint(arena, "{d}", .{count}) catch continue;
+            const count_s = std.fmt.allocPrint(arena, "{f}", .{grouped_int.fmt(count)}) catch continue;
             const count_pct_s = std.fmt.allocPrint(arena, "{d:.2}%", .{count_pct}) catch continue;
             const size_s = std.fmt.allocPrint(arena, "{Bi:.2}", .{size}) catch continue;
             const size_pct_s = std.fmt.allocPrint(arena, "{d:.2}%", .{size_pct}) catch continue;
