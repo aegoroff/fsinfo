@@ -80,8 +80,8 @@ pub const Reporter = struct {
         ) != null) {
             return;
         }
-        self.files_progress.setCompletedItems(@intCast(files));
-        self.directories_progress.setCompletedItems(@intCast(self.dirCount()));
+        self.files_progress.setCompletedItems(saturateCast(files));
+        self.directories_progress.setCompletedItems(saturateCast(self.dirCount()));
         self.progress.setCompletedItems(elapsedSeconds(self.start.durationTo(std.Io.Clock.real.now(self.io))));
     }
 
@@ -145,11 +145,23 @@ pub const Reporter = struct {
 fn elapsedSeconds(duration: std.Io.Duration) usize {
     const secs = duration.toSeconds();
     if (secs <= 0) return 0;
-    return @intCast(secs);
+    return std.math.cast(usize, secs) orelse std.math.maxInt(usize);
+}
+
+/// Cast to `usize` without panicking on 32-bit targets where the source
+/// exceeds `maxInt(u32)` (e.g. >4.3B files, or >136-year durations).
+fn saturateCast(n: u64) usize {
+    return std.math.cast(usize, n) orelse std.math.maxInt(usize);
 }
 
 test "elapsedSeconds saturates non-positive durations" {
     try std.testing.expectEqual(@as(usize, 0), elapsedSeconds(.fromSeconds(0)));
     try std.testing.expectEqual(@as(usize, 0), elapsedSeconds(.fromSeconds(-1)));
     try std.testing.expectEqual(@as(usize, 3), elapsedSeconds(.fromSeconds(3)));
+}
+
+test "saturateCast clamps to maxInt(usize)" {
+    try std.testing.expectEqual(@as(usize, 0), saturateCast(0));
+    try std.testing.expectEqual(@as(usize, 42), saturateCast(42));
+    try std.testing.expectEqual(std.math.maxInt(usize), saturateCast(std.math.maxInt(u64)));
 }
