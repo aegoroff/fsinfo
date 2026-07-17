@@ -41,9 +41,24 @@ pub fn main(init: std.process.Init) !void {
     defer rep.finish(stdout);
 
     if (opts.jobs == 1) {
-        try scan.walk(init.io, init.gpa, dir, exclusions, &rep, opts.verbose);
+        try scan.walk(
+            init.io,
+            init.gpa,
+            dir,
+            exclusions,
+            &rep,
+            opts.verbose,
+        );
     } else {
-        try scan.walkParallel(init.io, init.gpa, dir, exclusions, &rep, opts.jobs, opts.verbose);
+        try scan.walkParallel(
+            init.io,
+            init.gpa,
+            dir,
+            exclusions,
+            &rep,
+            opts.jobs,
+            opts.verbose,
+        );
     }
 }
 

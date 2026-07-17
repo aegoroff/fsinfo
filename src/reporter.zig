@@ -63,7 +63,12 @@ pub const Reporter = struct {
         const next = self.next_progress_at.load(.monotonic);
         if (files < next) return;
         const new_next = files - (files % progress_portion) + progress_portion;
-        if (self.next_progress_at.cmpxchgStrong(next, new_next, .monotonic, .monotonic) != null) {
+        if (self.next_progress_at.cmpxchgStrong(
+            next,
+            new_next,
+            .monotonic,
+            .monotonic,
+        ) != null) {
             return;
         }
         self.files_progress.setCompletedItems(@intCast(files));
@@ -74,7 +79,11 @@ pub const Reporter = struct {
     pub fn update(self: *Reporter, entry: *const std.Io.Dir.Walker.Entry) void {
         switch (entry.kind) {
             std.Io.File.Kind.file => {
-                const stat = entry.dir.statFile(self.io, entry.basename, .{ .follow_symlinks = false }) catch |err| {
+                const stat = entry.dir.statFile(
+                    self.io,
+                    entry.basename,
+                    .{ .follow_symlinks = false },
+                ) catch |err| {
                     if (self.verbose) {
                         std.log.warn("skip statFile {s}: {s}", .{ entry.path, @errorName(err) });
                     }
@@ -107,7 +116,10 @@ pub const Reporter = struct {
             self.byteCount(),
             "Time taken:",
         };
-        writer.print("{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5Bi:.2} ({5} bytes)\n{6s:<19} ", print_args) catch {};
+        writer.print(
+            "{0s:<19} {3d}\n{1s:<19} {4d}\n{2s:<19} {5Bi:.2} ({5} bytes)\n{6s:<19} ",
+            print_args,
+        ) catch {};
         duration.format(writer) catch {};
         writer.print("\n", .{}) catch {};
     }

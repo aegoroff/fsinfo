@@ -347,7 +347,11 @@ const WalkCtx = struct {
         const basename = std.fs.path.basename(child_path);
         while (true) {
             self.acquireForOpen(overflow);
-            const child_dir = parent.openDir(self.io, basename, open_options) catch |err| {
+            const child_dir = parent.openDir(
+                self.io,
+                basename,
+                open_options,
+            ) catch |err| {
                 self.budget.release(self.io);
                 if (isFdQuotaExceeded(err) and overflow.items.len > 0) {
                     self.drainOverflow(overflow, 0);
@@ -379,7 +383,11 @@ const WalkCtx = struct {
             };
             const entry = entry_or_null orelse break;
 
-            const child_path = joinRelPath(self.gpa, job.rel_path, entry.name) catch |err| {
+            const child_path = joinRelPath(
+                self.gpa,
+                job.rel_path,
+                entry.name,
+            ) catch |err| {
                 logSkip(self.verbose, "join path", entry.name, err);
                 continue;
             };
@@ -391,7 +399,11 @@ const WalkCtx = struct {
             switch (entry.kind) {
                 .file => {
                     defer self.gpa.free(child_path);
-                    const stat = job.dir.statFile(self.io, entry.name, .{ .follow_symlinks = false }) catch |err| {
+                    const stat = job.dir.statFile(
+                        self.io,
+                        entry.name,
+                        .{ .follow_symlinks = false },
+                    ) catch |err| {
                         logSkip(self.verbose, "statFile", child_path, err);
                         continue;
                     };
@@ -405,7 +417,10 @@ const WalkCtx = struct {
                         self.drainOverflow(overflow, keep);
                         if (self.openChildDir(job.dir, child_path, overflow)) |child_dir| {
                             self.rep.addDir();
-                            self.submitDir(.{ .dir = child_dir, .rel_path = child_path }, overflow);
+                            self.submitDir(
+                                .{ .dir = child_dir, .rel_path = child_path },
+                                overflow,
+                            );
                         } else {
                             self.gpa.free(child_path);
                         }
@@ -492,7 +507,15 @@ pub fn walk(
     rep: *reporter.Reporter,
     verbose: bool,
 ) std.mem.Allocator.Error!void {
-    try walkWithVisitor(io, gpa, dir, exclusions, rep, reportEntry, verbose);
+    try walkWithVisitor(
+        io,
+        gpa,
+        dir,
+        exclusions,
+        rep,
+        reportEntry,
+        verbose,
+    );
 }
 
 /// Parallel directory walk via a shared work queue of owning directory FDs.
