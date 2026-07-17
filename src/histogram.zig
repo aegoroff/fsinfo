@@ -63,6 +63,12 @@ pub const Histogram = struct {
         _ = self.sizes[i].fetchAdd(size, .monotonic);
     }
 
+    /// Prints the histogram table.
+    ///
+    /// `writer` **must** point to stdout. `zig_cli.Table.render` writes directly to
+    /// stdout via `std.Options.debug_io`, bypassing `writer`; passing any other
+    /// destination splits output between two unrelated streams. The `writer.flush()`
+    /// below is mandatory so the buffered title appears before the table.
     pub fn print(
         self: *const Histogram,
         gpa: std.mem.Allocator,
@@ -73,7 +79,8 @@ pub const Histogram = struct {
         const Table = @import("zig_cli").prompt.Table;
 
         writer.print("File size histogram:\n", .{}) catch {};
-        // Table.render writes directly to stdout; flush so the title appears first.
+        // Table.render bypasses `writer` and writes straight to stdout (see print contract);
+        // flush first so the title precedes the table.
         writer.flush() catch {};
 
         var arena_state = std.heap.ArenaAllocator.init(gpa);
