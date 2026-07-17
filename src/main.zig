@@ -42,7 +42,7 @@ pub fn main(init: std.process.Init) !void {
         opts.verbose,
         opts.histogram,
     );
-    defer rep.finish(stdout);
+    defer rep.finish(init.gpa, stdout);
 
     if (opts.jobs == 1) {
         try scan.walk(

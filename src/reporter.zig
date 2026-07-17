@@ -107,7 +107,7 @@ pub const Reporter = struct {
         self.maybeRefreshProgress();
     }
 
-    pub fn finish(self: *Reporter, writer: *std.Io.Writer) void {
+    pub fn finish(self: *Reporter, gpa: std.mem.Allocator, writer: *std.Io.Writer) void {
         self.directories_progress.end();
         self.files_progress.end();
         self.progress.end();
@@ -120,7 +120,7 @@ pub const Reporter = struct {
         const bytes = self.byteCount();
 
         if (self.histogram_enabled) {
-            self.size_histogram.print(writer, files, bytes);
+            self.size_histogram.print(gpa, writer, files, bytes);
         }
 
         const print_args = .{

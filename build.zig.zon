@@ -8,5 +8,9 @@
             .url = "https://github.com/prajwalch/yazap/archive/refs/tags/0.7.0.tar.gz",
             .hash = "yazap-0.7.0-Z1t-EjH4AQBTpC18eKV-K4K8b8Sl9KGrygK6iNqXDb4M",
         },
+        .zig_cli = .{
+            .url = "https://github.com/zig-utils/zig-cli/archive/4629d10a7e8aa6de9c26996109138683235a2273.tar.gz",
+            .hash = "zig_cli-0.1.1-18T51PHrAwDLO8a1WV4fyh-8-f6BCiucKdSLb6WJbw_R",
+        },
     },
 }

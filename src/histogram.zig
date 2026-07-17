@@ -62,23 +62,51 @@ pub const Histogram = struct {
         _ = self.sizes[i].fetchAdd(size, .monotonic);
     }
 
-    pub fn print(self: *const Histogram, writer: *std.Io.Writer, total_files: u64, total_size: u64) void {
+    pub fn print(
+        self: *const Histogram,
+        gpa: std.mem.Allocator,
+        writer: *std.Io.Writer,
+        total_files: u64,
+        total_size: u64,
+    ) void {
+        const Table = @import("zig_cli").prompt.Table;
+
         writer.print("File size histogram:\n", .{}) catch {};
-        writer.print(
-            "  {s:>2} {s:<20} {s:>12} {s:>8} {s:>12} {s:>8}\n",
-            .{ "#", "File size", "Count", "%", "Size", "%" },
-        ) catch {};
+        // Table.render writes directly to stdout; flush so the title appears first.
+        writer.flush() catch {};
+
+        var arena_state = std.heap.ArenaAllocator.init(gpa);
+        defer arena_state.deinit();
+        const arena = arena_state.allocator();
+
+        const columns = [_]Table.Column{
+            .{ .header = "#", .alignment = .right },
+            .{ .header = "File size", .alignment = .left },
+            .{ .header = "Count", .alignment = .right },
+            .{ .header = "%", .alignment = .right },
+            .{ .header = "Size", .alignment = .right },
+            .{ .header = "%", .alignment = .right },
+        };
+
+        var table = Table.init(arena, &columns).withStyle(.rounded);
+        defer table.deinit();
 
         for (0..bucket_count) |i| {
             const count = self.counts[i].load(.monotonic);
             const size = self.sizes[i].load(.monotonic);
             const count_pct = percent(count, total_files);
             const size_pct = percent(size, total_size);
-            writer.print(
-                "  {d:>2} {s:<20} {d:>12} {d:>7.2}% {Bi:>12.2} {d:>7.2}%\n",
-                .{ i + 1, labels[i], count, count_pct, size, size_pct },
-            ) catch {};
+
+            const num_s = std.fmt.allocPrint(arena, "{d}", .{i + 1}) catch continue;
+            const count_s = std.fmt.allocPrint(arena, "{d}", .{count}) catch continue;
+            const count_pct_s = std.fmt.allocPrint(arena, "{d:.2}%", .{count_pct}) catch continue;
+            const size_s = std.fmt.allocPrint(arena, "{Bi:.2}", .{size}) catch continue;
+            const size_pct_s = std.fmt.allocPrint(arena, "{d:.2}%", .{size_pct}) catch continue;
+
+            table.addRow(&.{ num_s, labels[i], count_s, count_pct_s, size_s, size_pct_s }) catch continue;
         }
+
+        table.render() catch {};
         writer.print("\n", .{}) catch {};
     }
 };
