@@ -189,9 +189,9 @@ fn writePadding(writer: *std.Io.Writer, used: usize, column: usize) !void {
 }
 
 /// zig-cli's Help pads each row independently (and hardcodes `--help`), which misaligns columns.
-fn printHelp(cmd: *zig_cli.BaseCommand) !void {
+fn printHelp(io: std.Io, cmd: *zig_cli.BaseCommand) !void {
     var buf: [4096]u8 = undefined;
-    var file_writer = std.Io.File.stdout().writerStreaming(std.Options.debug_io, &buf);
+    var file_writer = std.Io.File.stdout().writerStreaming(io, &buf);
     const out = &file_writer.interface;
 
     const help_left = "  -h, --help";
@@ -251,7 +251,7 @@ fn printHelp(cmd: *zig_cli.BaseCommand) !void {
     try out.flush();
 }
 
-pub fn parse(gpa: std.mem.Allocator, args: std.process.Args) !Options {
+pub fn parse(io: std.Io, gpa: std.mem.Allocator, args: std.process.Args) !Options {
     const query = std.Target.Query.fromTarget(&builtin.target);
     const description = try std.fmt.allocPrint(
         gpa,
@@ -274,7 +274,7 @@ pub fn parse(gpa: std.mem.Allocator, args: std.process.Args) !Options {
     defer gpa.free(arg_slice);
 
     if (arg_slice.len == 0 or wantsHelp(arg_slice)) {
-        try printHelp(cmd);
+        try printHelp(io, cmd);
         return error.HelpRequested;
     }
 

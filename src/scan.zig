@@ -321,7 +321,8 @@ const WalkCtx = struct {
     }
 
     /// Enqueue `job`, or park it on `overflow` when the shared queue is full.
-    /// Without an overflow list (initial root submit), falls back to iterative `processDir`.
+    /// Without an overflow list (initial root submit) or on overflow-append OOM,
+    /// falls back to `processDir` (recursive, but bounded by directory tree depth).
     fn submitDir(self: *WalkCtx, job: DirJob, overflow: ?*std.ArrayList(DirJob)) void {
         _ = self.queue.pending.fetchAdd(1, .monotonic);
         if (self.queue.tryPush(self.io, job)) return;
@@ -348,8 +349,9 @@ const WalkCtx = struct {
         }
     }
 
-    /// Process `job` and any jobs that could not fit on the shared queue, iteratively
-    /// (no recursive `processDir` on queue-full — avoids stack overflow on wide trees).
+    /// Process `job` and any jobs that could not fit on the shared queue, iteratively.
+    /// Queue-full items park on `overflow` and are consumed by the loop below; only the
+    /// OOM/root fallback in `submitDir` recurses (bounded by directory tree depth).
     fn processDir(self: *WalkCtx, job: DirJob) void {
         var overflow: std.ArrayList(DirJob) = .empty;
         defer {

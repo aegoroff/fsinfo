@@ -14,7 +14,7 @@ pub fn main(init: std.process.Init) !void {
         stdout.flush() catch {};
     }
 
-    const opts = cli.parse(init.gpa, init.minimal.args) catch |err| switch (err) {
+    const opts = cli.parse(init.io, init.gpa, init.minimal.args) catch |err| switch (err) {
         error.HelpRequested => return,
         error.InvalidJobs => {
             std.log.err("--jobs must be between 1 and {d}", .{cli.maxJobs()});
