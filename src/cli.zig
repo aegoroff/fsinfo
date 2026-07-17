@@ -102,14 +102,26 @@ fn normalizeArgs(
 
 fn collectArgs(gpa: std.mem.Allocator, args: std.process.Args) ![]const []const u8 {
     var list: std.ArrayList([]const u8) = .empty;
-    errdefer list.deinit(gpa);
+    errdefer {
+        for (list.items) |s| gpa.free(s);
+        list.deinit(gpa);
+    }
 
-    var iter = std.process.Args.Iterator.init(args);
+    // `init` is compile-error on Windows/WASI; `next` may point into the iterator buffer.
+    var iter = try std.process.Args.Iterator.initAllocator(args, gpa);
+    defer iter.deinit();
     _ = iter.skip();
     while (iter.next()) |arg| {
-        try list.append(gpa, arg);
+        const owned = try gpa.dupe(u8, arg);
+        errdefer gpa.free(owned);
+        try list.append(gpa, owned);
     }
     return try list.toOwnedSlice(gpa);
+}
+
+fn freeCollectedArgs(gpa: std.mem.Allocator, args: []const []const u8) void {
+    for (args) |s| gpa.free(s);
+    gpa.free(args);
 }
 
 fn buildCommand(gpa: std.mem.Allocator, description: []const u8) !*zig_cli.BaseCommand {
@@ -257,7 +269,7 @@ pub fn parse(gpa: std.mem.Allocator, args: std.process.Args) !Options {
     }
 
     const raw_args = try collectArgs(gpa, args);
-    defer gpa.free(raw_args);
+    defer freeCollectedArgs(gpa, raw_args);
     const arg_slice = try normalizeArgs(gpa, cmd.options.items, raw_args);
     defer gpa.free(arg_slice);
 
