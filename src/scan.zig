@@ -201,6 +201,23 @@ const FdBudget = struct {
         self.used += 1;
     }
 
+    /// Like `acquire` but returns `false` when `cancelled` becomes set.
+    /// Used by workers that must exit promptly on `group.cancel`.
+    fn acquireCancelable(
+        self: *FdBudget,
+        io: std.Io,
+        cancelled: *const std.atomic.Value(bool),
+    ) bool {
+        self.mutex.lockUncancelable(io);
+        defer self.mutex.unlock(io);
+        while (self.used >= self.max) {
+            if (cancelled.load(.acquire)) return false;
+            self.has_room.waitUncancelable(io, &self.mutex);
+        }
+        self.used += 1;
+        return true;
+    }
+
     fn tryAcquire(self: *FdBudget, io: std.Io) bool {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
@@ -214,6 +231,13 @@ const FdBudget = struct {
         defer self.mutex.unlock(io);
         self.used -= 1;
         self.has_room.signal(io);
+    }
+
+    /// Wake all workers blocked in `acquireCancelable` so they can observe `cancelled`.
+    fn signalCancel(self: *FdBudget, io: std.Io) void {
+        self.mutex.lockUncancelable(io);
+        defer self.mutex.unlock(io);
+        self.has_room.broadcast(io);
     }
 };
 
@@ -244,12 +268,13 @@ const DirQueue = struct {
         return true;
     }
 
-    fn popWait(self: *DirQueue, io: std.Io) ?DirJob {
+    fn popWait(self: *DirQueue, io: std.Io, cancelled: *const std.atomic.Value(bool)) ?DirJob {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
 
         while (self.items.items.len == 0) {
             if (self.pending.load(.acquire) == 0) return null;
+            if (cancelled.load(.acquire)) return null;
             self.not_empty.waitUncancelable(io, &self.mutex);
         }
         return self.items.pop().?;
@@ -262,6 +287,13 @@ const DirQueue = struct {
             self.not_empty.broadcast(io);
         }
     }
+
+    /// Wake all workers blocked in `popWait` so they can observe `cancelled`.
+    fn signalCancel(self: *DirQueue, io: std.Io) void {
+        self.mutex.lockUncancelable(io);
+        defer self.mutex.unlock(io);
+        self.not_empty.broadcast(io);
+    }
 };
 
 const WalkCtx = struct {
@@ -273,6 +305,13 @@ const WalkCtx = struct {
     budget: *FdBudget,
     overflow_cap: usize,
     verbose: bool,
+    cancelled: std.atomic.Value(bool),
+
+    fn handleCancel(self: *WalkCtx) void {
+        self.cancelled.store(true, .release);
+        self.queue.signalCancel(self.io);
+        self.budget.signalCancel(self.io);
+    }
 
     fn finishJob(self: *WalkCtx, job: DirJob) void {
         job.dir.close(self.io);
@@ -297,12 +336,15 @@ const WalkCtx = struct {
         self.processDir(job);
     }
 
-    /// Process parked overflow jobs (each gets its own nested overflow) until at most
-    /// `keep_at_most` remain. Frees directory FDs before opening more children of a wide parent.
+    /// Drain parked overflow jobs, finishing (not recursively processing) each one.
+    /// Finishing guarantees forward progress: each iteration releases one FD budget
+    /// slot without acquiring new ones, preventing deadlock under deep/wide trees.
+    /// Subtrees rooted at drained jobs are skipped — logged when `verbose` is set.
     fn drainOverflow(self: *WalkCtx, overflow: *std.ArrayList(DirJob), keep_at_most: usize) void {
         while (overflow.items.len > keep_at_most) {
             const parked = overflow.pop().?;
-            self.processDir(parked);
+            logSkip(self.verbose, "overflow drain", parked.rel_path, error.SystemResources);
+            self.finishJob(parked);
         }
     }
 
@@ -320,22 +362,27 @@ const WalkCtx = struct {
         var current: ?DirJob = job;
         while (current) |j| {
             self.processDirOne(j, &overflow);
+            if (self.cancelled.load(.acquire)) break;
             current = overflow.pop();
         }
     }
 
-    fn acquireForOpen(self: *WalkCtx, overflow: *std.ArrayList(DirJob)) void {
+    /// Try to acquire one FD budget slot for opening a child directory.
+    /// Under budget pressure, releases parked overflow FDs (via `finishJob`)
+    /// instead of recursively processing them — guarantees forward progress
+    /// and avoids the frozen-overflow deadlock.
+    /// Returns `false` if the walk was cancelled; the caller must not open the child.
+    fn acquireForOpen(self: *WalkCtx, overflow: *std.ArrayList(DirJob)) bool {
         while (!self.budget.tryAcquire(self.io)) {
-            // Drain our overflow first — those FDs are ours to finish.
-            // Do not steal from the shared queue while holding a parent FD: that nests
-            // processDir under budget pressure and can deadlock.
             if (overflow.items.len > 0) {
-                self.processDir(overflow.pop().?);
+                const parked = overflow.pop().?;
+                logSkip(self.verbose, "budget pressure", parked.rel_path, error.SystemResources);
+                self.finishJob(parked);
                 continue;
             }
-            self.budget.acquire(self.io);
-            return;
+            if (!self.budget.acquireCancelable(self.io, &self.cancelled)) return false;
         }
+        return true;
     }
 
     fn openChildDir(
@@ -346,13 +393,17 @@ const WalkCtx = struct {
     ) ?std.Io.Dir {
         const basename = std.fs.path.basename(child_path);
         while (true) {
-            self.acquireForOpen(overflow);
+            if (!self.acquireForOpen(overflow)) return null;
             const child_dir = parent.openDir(
                 self.io,
                 basename,
                 open_options,
             ) catch |err| {
                 self.budget.release(self.io);
+                if (err == error.Canceled) {
+                    self.handleCancel();
+                    return null;
+                }
                 if (isFdQuotaExceeded(err) and overflow.items.len > 0) {
                     self.drainOverflow(overflow, 0);
                     continue;
@@ -378,8 +429,9 @@ const WalkCtx = struct {
         var it = job.dir.iterate();
         while (true) {
             const entry_or_null = it.next(self.io) catch |err| {
+                if (err == error.Canceled) self.handleCancel();
                 logSkip(self.verbose, "readdir", job.rel_path, err);
-                continue;
+                break;
             };
             const entry = entry_or_null orelse break;
 
@@ -404,6 +456,10 @@ const WalkCtx = struct {
                         entry.name,
                         .{ .follow_symlinks = false },
                     ) catch |err| {
+                        if (err == error.Canceled) {
+                            self.handleCancel();
+                            break;
+                        }
                         logSkip(self.verbose, "statFile", child_path, err);
                         continue;
                     };
@@ -448,7 +504,8 @@ const WalkCtx = struct {
 
     fn worker(self: *WalkCtx) void {
         while (true) {
-            const job = self.queue.popWait(self.io) orelse return;
+            if (self.cancelled.load(.acquire)) return;
+            const job = self.queue.popWait(self.io, &self.cancelled) orelse return;
             self.processDir(job);
         }
     }
@@ -551,13 +608,16 @@ pub fn walkParallel(
         .budget = &budget,
         .overflow_cap = overflow_cap,
         .verbose = verbose,
+        .cancelled = .init(false),
     };
 
     budget.acquire(io);
     var root_dir: ?std.Io.Dir = try cloneDir(io, dir);
     errdefer {
-        if (root_dir) |d| d.close(io);
-        budget.release(io);
+        if (root_dir) |d| {
+            d.close(io);
+            budget.release(io);
+        }
     }
     var root_path: ?[]u8 = try gpa.alloc(u8, 0);
     errdefer if (root_path) |p| gpa.free(p);
@@ -567,7 +627,10 @@ pub fn walkParallel(
     root_path = null;
 
     var group: std.Io.Group = .init;
-    errdefer group.cancel(io);
+    errdefer {
+        ctx.handleCancel();
+        group.cancel(io);
+    }
 
     for (0..jobs) |_| {
         try group.concurrent(io, WalkCtx.worker, .{&ctx});
