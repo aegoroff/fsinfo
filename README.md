@@ -9,6 +9,7 @@ A non-interactive file system information tool implemented in Zig.
 - Total number of directories
 - Total size of all files (sum of sizes per directory entry; hard-linked names are counted separately)
 - Time taken for the analysis
+- Optional file-size histogram (`--histogram`)
 
 The tool automatically excludes system directories like `/proc`, `/dev`, and `/sys` during scanning, as well as any `tmpfs` mounts on Linux (typically `/run`, `/tmp`, `/dev/shm`), and provides progress updates during the analysis. Directory symlinks are not followed. If `PATH` itself is one of those directories (or lies inside them), `fsinfo` refuses to scan and exits with an error.
 
@@ -76,6 +77,8 @@ fsinfo [OPTIONS] <PATH>
 |--------|-------------|
 | `-j`, `--jobs N` | Parallel directory-walk workers. Default: half the logical CPU count (at least 1). Must be between 1 and 128 (or the CPU count if higher). Use `-j 1` for single-threaded. |
 | `-v`, `--verbose` | Log skipped entries to stderr (`std.log.warn`): permission errors, failed `openDir`/`statFile`, allocation failures, and similar silent skips. Off by default. |
+| `--histogram` | Print a file-size histogram (10 size ranges with count, bytes, and percentages). Off by default. |
+| `-h`, `--help` | Print help and exit. |
 
 ### Examples
 
@@ -89,6 +92,9 @@ fsinfo --jobs 1 .
 # Show why entries were skipped during the walk
 fsinfo -v /
 
+# File-size histogram plus summary totals
+fsinfo --histogram .
+
 # Analyze root filesystem (excluding /proc, /dev, /sys, and tmpfs mounts)
 fsinfo /
 
@@ -100,29 +106,46 @@ fsinfo /
 
 ### Output Format
 
-The tool outputs:
-- Total files count
-- Total directories count
-- Total files size (in human-readable format and bytes)
+By default the tool prints a summary:
+- Total files and directories (with thousands separators for large counts, e.g. `1,234,567`)
+- Total files size (human-readable and raw bytes)
 - Time taken for the analysis
 
-Example output:
+Example summary:
 ```
-Total files:        12345
-Total directories: 567
-Total files size:   1.23 GiB (1320701952 bytes)
+Total files:        12,345
+Total directories:  567
+Total files size:   1.23GiB (1320701952 bytes)
 Time taken:         2.5s
+```
+
+With `--histogram`, a size-range table is printed before the summary:
+
+```
+File size histogram:
+╭────┬──────────────────┬───────┬─────────┬──────────┬─────────╮
+│  # │ File size        │ Count │       % │     Size │       % │
+├────┼──────────────────┼───────┼─────────┼──────────┼─────────┤
+│  1 │ 0 B - 100 KiB    │ 7,890 │  63.91% │  45.2MiB │   3.50% │
+│  2 │ 100 KiB - 1 MiB  │ 2,100 │  17.01% │ 812.0MiB │  62.80% │
+│  … │ …                │     … │       … │        … │       … │
+│ 10 │ 10 TiB+          │     0 │   0.00% │       0B │   0.00% │
+╰────┴──────────────────┴───────┴─────────┴──────────┴─────────╯
+
+Total files:        12,345
+…
 ```
 
 ## Features
 
 - Fast file system traversal with optional parallel directory walk (`--jobs`)
+- Optional file-size histogram (`--histogram`)
 - Optional verbose logging of skipped entries (`--verbose`)
 - Progress indicators for files and directories
 - Automatic exclusion of system directories (`/proc`, `/dev`, `/sys`) and Linux `tmpfs` mounts
 - Does not follow directory symlinks; does not cross into excluded system trees
 - Total size is a per-entry sum (not unique inode bytes)
-- Human-readable file size formatting
+- Human-readable sizes and thousands-separated counts
 - Cross-platform support (Linux, macOS, Windows)
 
 ## License
