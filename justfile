@@ -27,7 +27,7 @@ test:
 
 # Build + archive one target; runs tests for x86_64-linux
 # Example: just arch=x86_64 os=linux abi=musl ver=0.3.0 cpu=core2 release
-release: build-target maybe-test archive-target
+release: maybe-test archive-target
 
 [private]
 build-target:
@@ -55,6 +55,7 @@ maybe-test:
 archive-target:
     {{ zig }} build archive \
         -Doptimize={{ optimize }} \
+        {{ cpu_flag }} \
         -Dtarget={{ triple }} \
         -Dversion={{ ver }} \
         --summary all \
