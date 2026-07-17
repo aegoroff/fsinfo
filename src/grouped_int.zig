@@ -9,15 +9,11 @@ pub const Formattable = struct {
     n: u64,
 
     pub fn format(self: @This(), writer: *std.Io.Writer) std.Io.Writer.Error!void {
-        try write(writer, self.n);
+        var buf: [32]u8 = undefined;
+        const slice = bufPrint(&buf, self.n);
+        try writer.writeAll(slice);
     }
 };
-
-pub fn write(writer: *std.Io.Writer, value: u64) std.Io.Writer.Error!void {
-    var buf: [32]u8 = undefined;
-    const slice = bufPrint(&buf, value);
-    try writer.writeAll(slice);
-}
 
 /// Writes into `buf` (needs at least 26 bytes for `u64`) and returns the used slice.
 pub fn bufPrint(buf: []u8, value: u64) []u8 {

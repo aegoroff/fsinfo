@@ -417,6 +417,21 @@ const WalkCtx = struct {
         }
     }
 
+    fn openAndSubmitChild(
+        self: *WalkCtx,
+        parent: std.Io.Dir,
+        child_path: []u8,
+        overflow: *std.ArrayList(DirJob),
+    ) void {
+        self.drainOverflow(overflow, self.overflow_cap -| 1);
+        if (self.openChildDir(parent, child_path, overflow)) |child_dir| {
+            self.rep.addDir();
+            self.submitDir(.{ .dir = child_dir, .rel_path = child_path }, overflow);
+        } else {
+            self.gpa.free(child_path);
+        }
+    }
+
     fn processDirOne(self: *WalkCtx, job: DirJob, overflow: *std.ArrayList(DirJob)) void {
         defer self.finishJob(job);
 
@@ -469,19 +484,8 @@ const WalkCtx = struct {
                 },
                 .directory => {
                     pending_dirs.append(self.gpa, child_path) catch |err| {
-                        // OOM: fall back to opening this child immediately.
                         logSkip(self.verbose, "pending dir", child_path, err);
-                        const keep = if (self.overflow_cap > 0) self.overflow_cap - 1 else 0;
-                        self.drainOverflow(overflow, keep);
-                        if (self.openChildDir(job.dir, child_path, overflow)) |child_dir| {
-                            self.rep.addDir();
-                            self.submitDir(
-                                .{ .dir = child_dir, .rel_path = child_path },
-                                overflow,
-                            );
-                        } else {
-                            self.gpa.free(child_path);
-                        }
+                        self.openAndSubmitChild(job.dir, child_path, overflow);
                     };
                 },
                 else => {
@@ -492,14 +496,7 @@ const WalkCtx = struct {
         }
 
         while (pending_dirs.pop()) |child_path| {
-            const keep = if (self.overflow_cap > 0) self.overflow_cap - 1 else 0;
-            self.drainOverflow(overflow, keep);
-            if (self.openChildDir(job.dir, child_path, overflow)) |child_dir| {
-                self.rep.addDir();
-                self.submitDir(.{ .dir = child_dir, .rel_path = child_path }, overflow);
-            } else {
-                self.gpa.free(child_path);
-            }
+            self.openAndSubmitChild(job.dir, child_path, overflow);
             self.rep.maybeRefreshProgress();
         }
     }
