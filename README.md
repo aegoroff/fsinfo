@@ -36,20 +36,20 @@ just build
 just test
 
 # One release target (build + archive; tests on x86_64-linux)
-just arch=x86_64 os=linux abi=musl ver=0.2.0 cpu=core2 release
+just arch=x86_64 os=linux abi=musl ver=0.3.0 cpu=core2 release
 
 # All CI release targets
-just ver=0.2.0 build-all
+just ver=0.3.0 build-all
 ```
 
 ### Build Options
 
-- `--version`: Specify the version of the app (default: `0.2.0-dev`)
+- `--version`: Specify the version of the app (default: `0.3.0-dev`)
 - `--optimize`: Optimization level (Debug, ReleaseSafe, ReleaseFast, ReleaseSmall)
 
 Example:
 ```bash
-zig build -Dversion=0.2.0 -Doptimize=ReleaseSafe
+zig build -Dversion=0.3.0 -Doptimize=ReleaseSafe
 ```
 
 ### Running Tests

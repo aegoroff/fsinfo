@@ -1,6 +1,6 @@
 .{
     .name = .fsinfo,
-    .version = "0.2.0",
+    .version = "0.3.0",
     .paths = .{"."},
     .fingerprint = 0x3bd039b06642bd5e,
     .dependencies = .{

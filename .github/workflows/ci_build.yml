@@ -58,7 +58,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=0.2.0-dev" >> "$GITHUB_OUTPUT"
+            echo "version=0.3.0-dev" >> "$GITHUB_OUTPUT"
           fi
       - name: Install mise and tools
         uses: jdx/mise-action@v4
@@ -118,7 +118,7 @@ jobs:
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
           else
-            echo "version=0.2.0-dev" >> "$GITHUB_OUTPUT"
+            echo "version=0.3.0-dev" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Download artefacts

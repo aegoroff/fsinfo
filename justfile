@@ -1,7 +1,7 @@
 optimize := "ReleaseFast"
-default_version := "0.2.0-dev"
+default_version := "0.3.0-dev"
 
-# Target overrides (CI / release): just arch=aarch64 os=linux abi=musl ver=0.2.0 release
+# Target overrides (CI / release): just arch=aarch64 os=linux abi=musl ver=0.3.0 release
 arch := "x86_64"
 os := "linux"
 abi := "musl"
@@ -26,7 +26,7 @@ test:
     {{ zig }} build test -Doptimize={{ optimize }} -Dtarget={{ local_target }} -Dcpu={{ local_cpu }} -Dversion={{ ver }} --summary all
 
 # Build + archive one target; runs tests for x86_64-linux
-# Example: just arch=x86_64 os=linux abi=musl ver=0.2.0 cpu=core2 release
+# Example: just arch=x86_64 os=linux abi=musl ver=0.3.0 cpu=core2 release
 release: build-target maybe-test archive-target
 
 [private]
@@ -60,7 +60,7 @@ archive-target:
         --summary all \
         --prefix-exe-dir {{ prefix }}
 
-# Cross-build all CI release targets (just ver=0.2.0 build-all)
+# Cross-build all CI release targets (just ver=0.3.0 build-all)
 build-all:
     #!/usr/bin/env bash
     set -euo pipefail

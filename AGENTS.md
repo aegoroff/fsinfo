@@ -49,8 +49,8 @@ Via **just** (uses mise for Zig; CI uses the same recipes):
 ```bash
 just build                                                      # ReleaseFast, x86_64-linux-musl, core2
 just test
-just arch=x86_64 os=linux abi=musl ver=0.2.0 cpu=core2 release
-just ver=0.2.0 build-all                                        # all CI targets + archives
+just arch=x86_64 os=linux abi=musl ver=0.3.0 cpu=core2 release
+just ver=0.3.0 build-all                                        # all CI targets + archives
 ```
 
 Binary output: `zig-out/bin/fsinfo` (or custom prefix from `--prefix-exe-dir`).
@@ -113,7 +113,7 @@ CI runs tests only for `x86_64-linux` builds (`just release`). Ensure tests pass
 - **Branches:** `master`, `develop`; PRs target `master`.
 - **CI:** `.github/workflows/ci_build.yml` — matrix build for Linux, Windows, macOS (x86_64 + aarch64).
 - **Releases:** Tags `v*` trigger changelog generation (`cliff.toml` / git-cliff) and GitHub release with `.tar.gz` artifacts.
-- **Version:** Passed at build time via `-Dversion=...` (`build_options.version` in code). Default: `0.2.0-dev`.
+- **Version:** Passed at build time via `-Dversion=...` (`build_options.version` in code). Default: `0.3.0-dev`.
 
 ## Commit and PR guidelines
 
