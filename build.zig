@@ -23,12 +23,10 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
-    const yazap = b.dependency("yazap", .{});
     const zig_cli = b.dependency("zig_cli", .{
         .target = target,
         .optimize = optimize,
     });
-    exe.root_module.addImport("yazap", yazap.module("yazap"));
     exe.root_module.addImport("zig_cli", zig_cli.module("zig_cli"));
     exe.root_module.addImport("build_options", options.createModule());
 
@@ -55,7 +53,6 @@ pub fn build(b: *std.Build) void {
             .link_libc = true,
         }),
     });
-    unit_tests.root_module.addImport("yazap", yazap.module("yazap"));
     unit_tests.root_module.addImport("zig_cli", zig_cli.module("zig_cli"));
     unit_tests.root_module.addImport("build_options", options.createModule());
 

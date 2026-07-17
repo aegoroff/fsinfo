@@ -9,7 +9,7 @@ A non-interactive file system information tool implemented in Zig. It walks a di
 | Item | Value |
 |------|-------|
 | Language | Zig **0.16.0** (see `mise.toml`) |
-| CLI parsing | [yazap](https://github.com/prajwalch/yazap) 0.7.0 |
+| CLI parsing | [zig-cli](https://github.com/zig-utils/zig-cli) |
 | License | MIT |
 
 ### Source layout
@@ -17,7 +17,7 @@ A non-interactive file system information tool implemented in Zig. It walks a di
 | File | Role |
 |------|------|
 | `src/main.zig` | Process entry: parse CLI, open path, run scan |
-| `src/cli.zig` | yazap args (`PATH`, `--jobs`), `defaultJobs` |
+| `src/cli.zig` | zig-cli args (`PATH`, `--jobs`, `--verbose`, `--histogram`), `defaultJobs` |
 | `src/scan.zig` | Serial / parallel directory walk |
 | `src/lib.zig` | Path exclusion helpers (`Exclusions`) |
 | `src/reporter.zig` | Progress + final stats output |
