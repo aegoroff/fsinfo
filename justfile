@@ -65,6 +65,7 @@ build-all:
     #!/usr/bin/env bash
     set -euo pipefail
     rm -f ./zig-out/*.tar.gz
+    rm -rf ./zig-out/bin-*
     just arch=x86_64 os=linux abi=musl ver={{ ver }} optimize={{ optimize }} cpu=core2 release
     just arch=aarch64 os=linux abi=musl ver={{ ver }} optimize={{ optimize }} cpu= release
     just arch=x86_64 os=macos abi=none ver={{ ver }} optimize={{ optimize }} cpu=core2 release
