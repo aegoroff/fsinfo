@@ -37,7 +37,11 @@ pub fn main(init: std.process.Init) !void {
         return err;
     };
 
-    var rep = reporter.Reporter.init(init.io, opts.verbose);
+    var rep = reporter.Reporter.init(
+        init.io,
+        opts.verbose,
+        opts.histogram,
+    );
     defer rep.finish(stdout);
 
     if (opts.jobs == 1) {

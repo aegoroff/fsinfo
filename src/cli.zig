@@ -13,6 +13,8 @@ pub const Options = struct {
     /// When set, skipped walk entries (permission errors, OOM, openDir failures, …)
     /// are reported via `std.log.warn`.
     verbose: bool,
+    /// When set, print a file-size histogram after the scan.
+    histogram: bool,
 };
 
 fn cpuCount() usize {
@@ -64,6 +66,11 @@ pub fn parse(gpa: std.mem.Allocator, io: std.Io, args: std.process.Args) !Option
         'v',
         "Log skipped entries (permission errors, open failures, allocation failures, …)",
     ));
+    try root_cmd.addArg(yazap.Arg.booleanOption(
+        "histogram",
+        null,
+        "Print file size histogram (count and bytes per size range)",
+    ));
 
     const matches = try app.parseProcess(io, args);
     const path = try gpa.dupe(u8, matches.getSingleValue("PATH").?);
@@ -80,6 +87,7 @@ pub fn parse(gpa: std.mem.Allocator, io: std.Io, args: std.process.Args) !Option
         .path = path,
         .jobs = try validateJobs(jobs),
         .verbose = matches.containsArg("verbose"),
+        .histogram = matches.containsArg("histogram"),
     };
 }
 

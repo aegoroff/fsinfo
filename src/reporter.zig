@@ -1,4 +1,5 @@
 const std = @import("std");
+const histogram = @import("histogram.zig");
 const progress_portion: u64 = 1024;
 
 pub const Reporter = struct {
@@ -13,8 +14,10 @@ pub const Reporter = struct {
     start: std.Io.Timestamp,
     io: std.Io,
     verbose: bool,
+    histogram_enabled: bool,
+    size_histogram: histogram.Histogram,
 
-    pub fn init(io: std.Io, verbose: bool) Reporter {
+    pub fn init(io: std.Io, verbose: bool, histogram_enabled: bool) Reporter {
         var progress = std.Progress.start(io, .{
             .estimated_total_items = 0,
             .root_name = "Time, sec",
@@ -33,6 +36,8 @@ pub const Reporter = struct {
             .start = std.Io.Clock.real.now(io),
             .io = io,
             .verbose = verbose,
+            .histogram_enabled = histogram_enabled,
+            .size_histogram = .init(),
         };
     }
 
@@ -43,6 +48,9 @@ pub const Reporter = struct {
     pub fn addFile(self: *Reporter, size: u64) void {
         _ = self.total_file_count.fetchAdd(1, .monotonic);
         _ = self.total_size.fetchAdd(size, .monotonic);
+        if (self.histogram_enabled) {
+            self.size_histogram.add(size);
+        }
     }
 
     pub fn fileCount(self: *const Reporter) u64 {
@@ -107,13 +115,21 @@ pub const Reporter = struct {
         const end = std.Io.Clock.real.now(self.io);
         const duration = self.start.durationTo(end);
 
+        const files = self.fileCount();
+        const dirs = self.dirCount();
+        const bytes = self.byteCount();
+
+        if (self.histogram_enabled) {
+            self.size_histogram.print(writer, files, bytes);
+        }
+
         const print_args = .{
             "Total files:",
             "Total directories:",
             "Total files size:",
-            self.fileCount(),
-            self.dirCount(),
-            self.byteCount(),
+            files,
+            dirs,
+            bytes,
             "Time taken:",
         };
         writer.print(

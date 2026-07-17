@@ -759,7 +759,7 @@ test "parallel walk matches serial totals" {
     var serial: SerialTotals = .{ .io = io };
     try walkWithVisitor(io, std.testing.allocator, tmp.dir, exclusions, &serial, SerialTotals.onEntry, false);
 
-    var parallel_rep = reporter.Reporter.init(io, false);
+    var parallel_rep = reporter.Reporter.init(io, false, false);
     try walkParallel(io, std.testing.allocator, tmp.dir, exclusions, &parallel_rep, 2, false);
     const parallel_files = parallel_rep.fileCount();
     const parallel_dirs = parallel_rep.dirCount();
