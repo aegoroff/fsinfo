@@ -70,13 +70,27 @@ fn wantsHelp(args: []const []const u8) bool {
     return false;
 }
 
+fn shortTakesValue(options: []const zig_cli.Option, short: u8) bool {
+    for (options) |opt| {
+        if (opt.short) |s| {
+            if (s == short) return opt.option_type != .bool;
+        }
+    }
+    return false;
+}
+
 /// Expand attached short values (`-j1` → `-j`, `1`) that zig-cli's parser does not accept.
-fn normalizeArgs(gpa: std.mem.Allocator, args: []const []const u8) ![]const []const u8 {
+/// Driven by option definitions: any short with a non-bool type is split.
+fn normalizeArgs(
+    gpa: std.mem.Allocator,
+    options: []const zig_cli.Option,
+    args: []const []const u8,
+) ![]const []const u8 {
     var list: std.ArrayList([]const u8) = .empty;
     errdefer list.deinit(gpa);
 
     for (args) |arg| {
-        if (arg.len >= 3 and arg[0] == '-' and arg[1] != '-' and arg[1] == 'j') {
+        if (arg.len >= 3 and arg[0] == '-' and arg[1] != '-' and shortTakesValue(options, arg[1])) {
             try list.append(gpa, arg[0..2]);
             try list.append(gpa, arg[2..]);
             continue;
@@ -244,7 +258,7 @@ pub fn parse(gpa: std.mem.Allocator, args: std.process.Args) !Options {
 
     const raw_args = try collectArgs(gpa, args);
     defer gpa.free(raw_args);
-    const arg_slice = try normalizeArgs(gpa, raw_args);
+    const arg_slice = try normalizeArgs(gpa, cmd.options.items, raw_args);
     defer gpa.free(arg_slice);
 
     if (arg_slice.len == 0 or wantsHelp(arg_slice)) {
@@ -266,15 +280,23 @@ test "maxJobs is at least 128" {
     try std.testing.expect(maxJobs() >= min_max_jobs);
 }
 
-test "normalizeArgs expands attached -j value" {
-    const raw = [_][]const u8{ "-j1", "src", "--histogram" };
-    const normalized = try normalizeArgs(std.testing.allocator, &raw);
+test "normalizeArgs expands attached values for non-bool shorts" {
+    const options = [_]zig_cli.Option{
+        zig_cli.Option.init("jobs", "jobs", "", .int).withShort('j'),
+        zig_cli.Option.init("out", "out", "", .string).withShort('o'),
+        zig_cli.Option.init("verbose", "verbose", "", .bool).withShort('v'),
+    };
+    const raw = [_][]const u8{ "-j1", "-opath", "-v", "-v1", "src" };
+    const normalized = try normalizeArgs(std.testing.allocator, &options, &raw);
     defer std.testing.allocator.free(normalized);
-    try std.testing.expectEqual(@as(usize, 4), normalized.len);
+    try std.testing.expectEqual(@as(usize, 7), normalized.len);
     try std.testing.expectEqualStrings("-j", normalized[0]);
     try std.testing.expectEqualStrings("1", normalized[1]);
-    try std.testing.expectEqualStrings("src", normalized[2]);
-    try std.testing.expectEqualStrings("--histogram", normalized[3]);
+    try std.testing.expectEqualStrings("-o", normalized[2]);
+    try std.testing.expectEqualStrings("path", normalized[3]);
+    try std.testing.expectEqualStrings("-v", normalized[4]);
+    try std.testing.expectEqualStrings("-v1", normalized[5]); // bool: leave attached remainder alone
+    try std.testing.expectEqualStrings("src", normalized[6]);
 }
 
 test "optionLeftWidth matches printed left column" {
