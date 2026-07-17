@@ -255,7 +255,7 @@ pub fn parse(gpa: std.mem.Allocator, args: std.process.Args) !Options {
     capture = .{ .gpa = gpa };
     var parser = zig_cli.Parser.init(gpa);
     try parser.parse(cmd, arg_slice);
-    return capture.options.?;
+    return capture.options orelse error.MissingRequiredArgument;
 }
 
 test "defaultJobs is at least one" {

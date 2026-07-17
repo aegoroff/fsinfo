@@ -14,13 +14,15 @@ pub fn main(init: std.process.Init) !void {
         stdout.flush() catch {};
     }
 
-    const opts = cli.parse(init.gpa, init.minimal.args) catch |err| {
-        if (err == error.HelpRequested) return;
-        if (err == error.InvalidJobs) {
+    const opts = cli.parse(init.gpa, init.minimal.args) catch |err| switch (err) {
+        error.HelpRequested => return,
+        error.InvalidJobs => {
             std.log.err("--jobs must be between 1 and {d}", .{cli.maxJobs()});
             std.process.exit(2);
-        }
-        return err;
+        },
+        // zig-cli already printed `Error: …` for these; avoid a second Zig error line.
+        error.OutOfMemory => return err,
+        else => std.process.exit(2),
     };
     defer init.gpa.free(opts.path);
 

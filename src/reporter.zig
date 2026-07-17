@@ -142,22 +142,10 @@ pub const Reporter = struct {
     }
 };
 
-fn shouldUpdateProgress(file_count: u64) bool {
-    return file_count >= progress_portion and file_count % progress_portion == 0;
-}
-
 fn elapsedSeconds(duration: std.Io.Duration) usize {
     const secs = duration.toSeconds();
     if (secs <= 0) return 0;
     return @intCast(secs);
-}
-
-test "progress updates at portion boundary including first" {
-    try std.testing.expect(!shouldUpdateProgress(0));
-    try std.testing.expect(!shouldUpdateProgress(1023));
-    try std.testing.expect(shouldUpdateProgress(1024));
-    try std.testing.expect(!shouldUpdateProgress(1025));
-    try std.testing.expect(shouldUpdateProgress(2048));
 }
 
 test "elapsedSeconds saturates non-positive durations" {
