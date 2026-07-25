@@ -458,12 +458,19 @@ const WalkCtx = struct {
                     self.handleCancel();
                     return null;
                 }
-                if (isFdQuotaExceeded(err) and overflow.items.len > 0) {
-                    // Requeue keeps FDs open; process locally so the OS quota can clear.
+                if (isFdQuotaExceeded(err)) {
+                    // Must close FDs — requeue alone keeps them open. Drain local
+                    // overflow first, then steal from the shared queue if needed.
+                    var freed_any = false;
                     while (overflow.items.len > 0) {
                         self.processDir(overflow.pop().?);
+                        freed_any = true;
                     }
-                    continue;
+                    if (self.queue.tryPop(self.io)) |stolen| {
+                        self.processDir(stolen);
+                        freed_any = true;
+                    }
+                    if (freed_any) continue;
                 }
                 logSkip(self.verbose, "openDir", child_path, err);
                 return null;
