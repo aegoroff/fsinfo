@@ -188,9 +188,18 @@ fn absoluteUnderRoot(root_abs: []const u8, rel: []const u8, buf: []u8) error{Nam
     return buf[0..total];
 }
 
-fn isExcludedPath(exclusions: lib.Exclusions, root_abs: []const u8, rel: []const u8) bool {
+fn isExcludedPath(
+    exclusions: lib.Exclusions,
+    root_abs: []const u8,
+    rel: []const u8,
+    verbose: bool,
+) bool {
     var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    const abs = absoluteUnderRoot(root_abs, rel, &buf) catch return false;
+    const abs = absoluteUnderRoot(root_abs, rel, &buf) catch |err| {
+        // Fail closed: a path too long to join cannot be proven outside exclusions.
+        logSkip(verbose, "exclusion path", rel, err);
+        return true;
+    };
     return exclusions.probe(abs);
 }
 
@@ -506,7 +515,7 @@ const WalkCtx = struct {
                 logSkip(self.verbose, "join path", entry.name, err);
                 continue;
             };
-            if (isExcludedPath(self.exclusions, self.root_abs, child_path)) {
+            if (isExcludedPath(self.exclusions, self.root_abs, child_path, self.verbose)) {
                 self.gpa.free(child_path);
                 continue;
             }
@@ -588,7 +597,7 @@ pub fn walkWithVisitor(
             continue;
         };
         const entry = entry_or_null orelse break;
-        if (isExcludedPath(exclusions, root_abs, entry.path)) {
+        if (isExcludedPath(exclusions, root_abs, entry.path, verbose)) {
             continue;
         }
         if (entry.kind == .directory) {
