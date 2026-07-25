@@ -170,6 +170,30 @@ fn joinRelPath(gpa: std.mem.Allocator, parent: []const u8, name: []const u8) std
     return out;
 }
 
+/// Join scan-root realpath with a path relative to that root into `buf`.
+/// Used so exclusion probes see absolute paths (avoids matching `~/tmp` to `/tmp`).
+fn absoluteUnderRoot(root_abs: []const u8, rel: []const u8, buf: []u8) error{NameTooLong}![]const u8 {
+    if (rel.len == 0) return root_abs;
+    const need_sep = root_abs.len == 0 or !std.fs.path.isSep(root_abs[root_abs.len - 1]);
+    const sep_len: usize = if (need_sep) 1 else 0;
+    const total = root_abs.len + sep_len + rel.len;
+    if (total > buf.len) return error.NameTooLong;
+    @memcpy(buf[0..root_abs.len], root_abs);
+    var i = root_abs.len;
+    if (need_sep) {
+        buf[i] = std.fs.path.sep;
+        i += 1;
+    }
+    @memcpy(buf[i..][0..rel.len], rel);
+    return buf[0..total];
+}
+
+fn isExcludedPath(exclusions: lib.Exclusions, root_abs: []const u8, rel: []const u8) bool {
+    var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const abs = absoluteUnderRoot(root_abs, rel, &buf) catch return false;
+    return exclusions.probe(abs);
+}
+
 fn logSkip(verbose: bool, comptime what: []const u8, path: []const u8, err: anyerror) void {
     if (!verbose) return;
     if (path.len == 0) {
@@ -300,6 +324,8 @@ const WalkCtx = struct {
     io: std.Io,
     gpa: std.mem.Allocator,
     exclusions: lib.Exclusions,
+    /// Absolute realpath of the scan root; exclusion probes join this with `rel_path`.
+    root_abs: []const u8,
     rep: *reporter.Reporter,
     queue: *DirQueue,
     budget: *FdBudget,
@@ -454,7 +480,7 @@ const WalkCtx = struct {
                 logSkip(self.verbose, "join path", entry.name, err);
                 continue;
             };
-            if (self.exclusions.probe(child_path)) {
+            if (isExcludedPath(self.exclusions, self.root_abs, child_path)) {
                 self.gpa.free(child_path);
                 continue;
             }
@@ -516,7 +542,11 @@ pub fn walkWithVisitor(
     context: anytype,
     comptime onEntry: fn (@TypeOf(context), *const std.Io.Dir.Walker.Entry) void,
     verbose: bool,
-) std.mem.Allocator.Error!void {
+) (std.mem.Allocator.Error || std.Io.Dir.RealPathError)!void {
+    var root_abs_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root_abs_len = try dir.realPath(io, &root_abs_buf);
+    const root_abs = root_abs_buf[0..root_abs_len];
+
     var walker = try dir.walkSelectively(gpa);
     defer {
         // `deinit` does not close nested dir FDs left on the stack (e.g. early abort).
@@ -532,7 +562,7 @@ pub fn walkWithVisitor(
             continue;
         };
         const entry = entry_or_null orelse break;
-        if (exclusions.probe(entry.path)) {
+        if (isExcludedPath(exclusions, root_abs, entry.path)) {
             continue;
         }
         if (entry.kind == .directory) {
@@ -556,7 +586,7 @@ pub fn walk(
     exclusions: lib.Exclusions,
     rep: *reporter.Reporter,
     verbose: bool,
-) std.mem.Allocator.Error!void {
+) (std.mem.Allocator.Error || std.Io.Dir.RealPathError)!void {
     try walkWithVisitor(
         io,
         gpa,
@@ -578,8 +608,12 @@ pub fn walkParallel(
     rep: *reporter.Reporter,
     jobs: usize,
     verbose: bool,
-) (std.mem.Allocator.Error || std.Io.ConcurrentError || std.Io.Dir.OpenError)!void {
+) (std.mem.Allocator.Error || std.Io.ConcurrentError || std.Io.Dir.OpenError || std.Io.Dir.RealPathError)!void {
     std.debug.assert(jobs >= 2);
+
+    var root_abs_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root_abs_len = try dir.realPath(io, &root_abs_buf);
+    const root_abs = root_abs_buf[0..root_abs_len];
 
     const budget_max = dirFdBudget(jobs);
     const overflow_cap = overflowCap(jobs, budget_max);
@@ -596,6 +630,7 @@ pub fn walkParallel(
         .io = io,
         .gpa = gpa,
         .exclusions = exclusions,
+        .root_abs = root_abs,
         .rep = rep,
         .queue = &queue,
         .budget = &budget,
@@ -692,7 +727,32 @@ test "buildExclusions includes Linux tmpfs mounts" {
     try std.testing.expect(exclusions.probe("/run") or exclusions.probe("/tmp"));
 }
 
-test "selective walk does not descend into excluded directories" {
+test "absoluteUnderRoot joins root and relative path" {
+    var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    if (std.fs.path.sep == '/') {
+        try std.testing.expectEqualStrings("/", try absoluteUnderRoot("/", "", &buf));
+        try std.testing.expectEqualStrings("/proc", try absoluteUnderRoot("/", "proc", &buf));
+        try std.testing.expectEqualStrings("/home/u/tmp", try absoluteUnderRoot("/home/u", "tmp", &buf));
+        try std.testing.expectEqualStrings("/home/u/a/b", try absoluteUnderRoot("/home/u", "a/b", &buf));
+    } else {
+        try std.testing.expectEqualStrings("C:\\proc", try absoluteUnderRoot("C:\\", "proc", &buf));
+        try std.testing.expectEqualStrings("C:\\Users\\u\\tmp", try absoluteUnderRoot("C:\\Users\\u", "tmp", &buf));
+    }
+}
+
+test "absolute exclusion does not match same basename under another root" {
+    var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const exclusions = lib.Exclusions{ .haystack = &[_][]const u8{"/tmp"} };
+    if (std.fs.path.sep != '/') return;
+
+    const under_home = try absoluteUnderRoot("/home/user", "tmp", &buf);
+    try std.testing.expect(!exclusions.probe(under_home));
+
+    const under_root = try absoluteUnderRoot("/", "tmp", &buf);
+    try std.testing.expect(exclusions.probe(under_root));
+}
+
+test "selective walk does not treat basename-only paths as system exclusions" {
     const io = std.testing.io;
     var tmp = std.testing.tmpDir(.{ .iterate = true, .follow_symlinks = false });
     defer tmp.cleanup();
@@ -702,8 +762,48 @@ test "selective walk does not descend into excluded directories" {
     try tmp.dir.writeFile(io, .{ .sub_path = "keep/a.txt", .data = "a" });
     try tmp.dir.writeFile(io, .{ .sub_path = "proc/secret.txt", .data = "secret" });
 
+    // System `/proc` must not exclude a directory merely named `proc` under the scan root.
     const exclusions = lib.Exclusions{
         .haystack = &[_][]const u8{"/proc"},
+    };
+
+    const Seen = struct {
+        keep_a: bool = false,
+        proc: bool = false,
+        secret: bool = false,
+
+        fn onEntry(self: *@This(), entry: *const std.Io.Dir.Walker.Entry) void {
+            if (std.mem.eql(u8, entry.path, "keep/a.txt")) self.keep_a = true;
+            if (std.mem.eql(u8, entry.path, "proc")) self.proc = true;
+            if (std.mem.eql(u8, entry.path, "proc/secret.txt")) self.secret = true;
+        }
+    };
+    var seen: Seen = .{};
+
+    try walkWithVisitor(io, std.testing.allocator, tmp.dir, exclusions, &seen, Seen.onEntry, false);
+
+    try std.testing.expect(seen.keep_a);
+    try std.testing.expect(seen.proc);
+    try std.testing.expect(seen.secret);
+}
+
+test "selective walk skips directories matching absolute exclusion under root" {
+    const io = std.testing.io;
+    var tmp = std.testing.tmpDir(.{ .iterate = true, .follow_symlinks = false });
+    defer tmp.cleanup();
+
+    try tmp.dir.createDir(io, "keep", .default_dir);
+    try tmp.dir.createDir(io, "proc", .default_dir);
+    try tmp.dir.writeFile(io, .{ .sub_path = "keep/a.txt", .data = "a" });
+    try tmp.dir.writeFile(io, .{ .sub_path = "proc/secret.txt", .data = "secret" });
+
+    var root_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root_len = try tmp.dir.realPath(io, &root_buf);
+    var abs_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const proc_abs = try absoluteUnderRoot(root_buf[0..root_len], "proc", &abs_buf);
+    const haystack = [_][]const u8{proc_abs};
+    const exclusions = lib.Exclusions{
+        .haystack = &haystack,
     };
 
     const Seen = struct {
@@ -789,8 +889,16 @@ test "parallel walk matches serial totals" {
     try tmp.dir.writeFile(io, .{ .sub_path = "ignored.txt", .data = "skip" });
     try tmp.dir.symLink(io, "real", "link", .{ .is_directory = true });
 
+    var root_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const root_len = try tmp.dir.realPath(io, &root_buf);
+    const root_abs = root_buf[0..root_len];
+    var proc_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    var ignored_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+    const proc_abs = try absoluteUnderRoot(root_abs, "proc", &proc_buf);
+    const ignored_abs = try absoluteUnderRoot(root_abs, "ignored.txt", &ignored_buf);
+    const haystack = [_][]const u8{ proc_abs, ignored_abs };
     const exclusions = lib.Exclusions{
-        .haystack = &[_][]const u8{ "/proc", "/ignored.txt" },
+        .haystack = &haystack,
     };
 
     // Avoid a second `Reporter`/`Progress.start` in the same process: count serial via visitor.

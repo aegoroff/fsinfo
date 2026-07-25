@@ -3,7 +3,10 @@ const std = @import("std");
 pub const Exclusions = struct {
     haystack: []const []const u8,
     /// Probes `path` to be excluded from scanning.
-    /// `path` may be absolute or relative to the walk root (as from `Walker.Entry.path`).
+    /// Prefer an absolute path (walkers join the scan-root realpath with the
+    /// relative entry path). Leading separators are stripped so `/proc` and
+    /// `proc` compare equal; relative probes can false-match basenames like
+    /// `tmp` against `/tmp`, which is why walks use absolute paths.
     pub fn probe(self: *const Exclusions, path: []const u8) bool {
         for (self.haystack) |prefix| {
             if (matchesExcludedPrefix(path, prefix)) {
