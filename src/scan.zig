@@ -292,6 +292,13 @@ const DirQueue = struct {
         return true;
     }
 
+    fn tryPop(self: *DirQueue, io: std.Io) ?DirJob {
+        self.mutex.lockUncancelable(io);
+        defer self.mutex.unlock(io);
+        if (self.items.items.len == 0) return null;
+        return self.items.pop();
+    }
+
     fn popWait(self: *DirQueue, io: std.Io, cancelled: *const std.atomic.Value(bool)) ?DirJob {
         self.mutex.lockUncancelable(io);
         defer self.mutex.unlock(io);
@@ -363,18 +370,28 @@ const WalkCtx = struct {
         self.processDir(job);
     }
 
-    /// Process parked overflow jobs (each gets its own nested overflow) until at most
-    /// `keep_at_most` remain. Frees directory FDs before opening more children of a wide parent.
+    /// Hand a parked overflow job back to the shared queue so another worker can
+    /// process it. Does not touch `pending` (already counted at `submitDir`).
+    /// If the queue is full, falls back to local `processDir` (may nest while a
+    /// parent FD is still held — last resort only).
+    fn requeueOrProcess(self: *WalkCtx, job: DirJob) void {
+        if (self.queue.tryPush(self.io, job)) return;
+        self.processDir(job);
+    }
+
+    /// Move parked overflow jobs to the shared queue (or process locally if full)
+    /// until at most `keep_at_most` remain. Prefers re-queue over nested walk so
+    /// parent FDs are not held across deep `processDir` under budget pressure.
     fn drainOverflow(self: *WalkCtx, overflow: *std.ArrayList(DirJob), keep_at_most: usize) void {
         while (overflow.items.len > keep_at_most) {
-            const parked = overflow.pop().?;
-            self.processDir(parked);
+            self.requeueOrProcess(overflow.pop().?);
         }
     }
 
     /// Process `job` and any jobs that could not fit on the shared queue, iteratively.
     /// Queue-full items park on `overflow` and are consumed by the loop below; only the
-    /// OOM/root fallback in `submitDir` recurses (bounded by directory tree depth).
+    /// OOM/root fallback in `submitDir` / full-queue path in `requeueOrProcess` recurses
+    /// (bounded by directory tree depth).
     fn processDir(self: *WalkCtx, job: DirJob) void {
         var overflow: std.ArrayList(DirJob) = .empty;
         defer {
@@ -393,13 +410,19 @@ const WalkCtx = struct {
     }
 
     /// Try to acquire one FD budget slot for opening a child directory.
-    /// Under budget pressure, processes parked overflow jobs (freeing their FDs)
-    /// before blocking. Returns `false` if the walk was cancelled; the caller
-    /// must not open the child.
+    /// Under budget pressure, re-queues parked overflow jobs onto the shared queue
+    /// (so peers in `popWait` can finish them without nesting here). If the queue is
+    /// full, processes one job locally. If local overflow is empty but the queue still
+    /// has work, steals one job so FDs can be released while peers wait on budget.
+    /// Returns `false` if the walk was cancelled; the caller must not open the child.
     fn acquireForOpen(self: *WalkCtx, overflow: *std.ArrayList(DirJob)) bool {
         while (!self.budget.tryAcquire(self.io)) {
             if (overflow.items.len > 0) {
-                self.processDir(overflow.pop().?);
+                self.requeueOrProcess(overflow.pop().?);
+                continue;
+            }
+            if (self.queue.tryPop(self.io)) |stolen| {
+                self.processDir(stolen);
                 continue;
             }
             return self.budget.acquireCancelable(self.io, &self.cancelled);
