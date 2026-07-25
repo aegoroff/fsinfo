@@ -376,7 +376,7 @@ const WalkCtx = struct {
                 self.processDir(overflow.pop().?);
                 continue;
             }
-            if (!self.budget.acquireCancelable(self.io, &self.cancelled)) return false;
+            return self.budget.acquireCancelable(self.io, &self.cancelled);
         }
         return true;
     }
