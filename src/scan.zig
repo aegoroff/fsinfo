@@ -450,7 +450,10 @@ const WalkCtx = struct {
                     return null;
                 }
                 if (isFdQuotaExceeded(err) and overflow.items.len > 0) {
-                    self.drainOverflow(overflow, 0);
+                    // Requeue keeps FDs open; process locally so the OS quota can clear.
+                    while (overflow.items.len > 0) {
+                        self.processDir(overflow.pop().?);
+                    }
                     continue;
                 }
                 logSkip(self.verbose, "openDir", child_path, err);
