@@ -105,11 +105,11 @@ pub const Histogram = struct {
             const count_pct = percent(count, total_files);
             const size_pct = percent(size, total_size);
 
-            const num_s = std.fmt.allocPrint(arena, "{d}", .{i + 1}) catch continue;
-            const count_s = std.fmt.allocPrint(arena, "{f}", .{grouped_int.fmt(count)}) catch continue;
-            const count_pct_s = std.fmt.allocPrint(arena, "{d:.2}%", .{count_pct}) catch continue;
-            const size_s = std.fmt.allocPrint(arena, "{Bi:.2}", .{size}) catch continue;
-            const size_pct_s = std.fmt.allocPrint(arena, "{d:.2}%", .{size_pct}) catch continue;
+            const num_s = arena.print("{d}", .{i + 1}) catch continue;
+            const count_s = arena.print("{f}", .{grouped_int.fmt(count)}) catch continue;
+            const count_pct_s = arena.print("{d:.2}%", .{count_pct}) catch continue;
+            const size_s = arena.print("{Bi:.2}", .{size}) catch continue;
+            const size_pct_s = arena.print("{d:.2}%", .{size_pct}) catch continue;
 
             table.addRow(&.{ num_s, labels[i], count_s, count_pct_s, size_s, size_pct_s }) catch continue;
         }

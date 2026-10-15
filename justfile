@@ -1,4 +1,4 @@
-optimize := "ReleaseFast"
+optimize := "fast"
 default_version := "0.3.0-dev"
 
 # Target overrides (CI / release): just arch=aarch64 os=linux abi=musl ver=0.3.0 release
@@ -17,7 +17,7 @@ triple := arch + "-" + os + "-" + abi
 prefix := "bin-" + arch + "-" + os + "-" + abi
 cpu_flag := if cpu != "" { "-Dcpu=" + cpu } else { "" }
 
-# Local ReleaseFast build (x86_64-linux-musl / core2)
+# Local ReleaseFast (optimize=fast) build (x86_64-linux-musl / core2)
 build:
     {{ zig }} build -Doptimize={{ optimize }} -Dtarget={{ local_target }} -Dcpu={{ local_cpu }} -Dversion={{ ver }} --summary all
 

@@ -253,8 +253,7 @@ fn printHelp(io: std.Io, cmd: *zig_cli.BaseCommand) !void {
 
 pub fn parse(io: std.Io, gpa: std.mem.Allocator, args: std.process.Args) !Options {
     const query = std.Target.Query.fromTarget(&builtin.target);
-    const description = try std.fmt.allocPrint(
-        gpa,
+    const description = try gpa.print(
         \\A non-interactive file system information tool implemented in Zig ({s})
         \\Copyright (C) 2025-2026 Alexander Egorov. All rights reserved.
     ,

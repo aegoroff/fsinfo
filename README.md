@@ -15,7 +15,7 @@ The tool automatically excludes system directories like `/proc`, `/dev`, and `/s
 
 ## Requirements
 
-- [Zig](https://ziglang.org/) **0.16.0** and [just](https://github.com/casey/just) (both pinned in [`mise.toml`](mise.toml); use [mise](https://mise.jdx.dev/) or install them manually)
+- [Zig](https://ziglang.org/) **0.17.0** and [just](https://github.com/casey/just) (both pinned in [`mise.toml`](mise.toml); use [mise](https://mise.jdx.dev/) or install them manually)
 
 ## Building
 
@@ -32,7 +32,7 @@ The executable will be placed in `zig-out/bin/fsinfo`.
 Use [just](https://github.com/casey/just) (pinned in [`mise.toml`](mise.toml)):
 
 ```bash
-# Local ReleaseFast build / tests (x86_64-linux-musl)
+# Local ReleaseFast (optimize=fast) build / tests (x86_64-linux-musl)
 just build
 just test
 
@@ -46,11 +46,11 @@ just ver=0.3.0 build-all
 ### Build Options
 
 - `--version`: Specify the version of the app (default: `0.3.0-dev`)
-- `--optimize`: Optimization level (Debug, ReleaseSafe, ReleaseFast, ReleaseSmall)
+- `--optimize`: Optimization level (`debug`, `safe`, `fast`, `small`)
 
 Example:
 ```bash
-zig build -Dversion=0.3.0 -Doptimize=ReleaseSafe
+zig build -Dversion=0.3.0 -Doptimize=safe
 ```
 
 ### Running Tests

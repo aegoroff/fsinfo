@@ -19,7 +19,7 @@ pub const Exclusions = struct {
 
 fn stripLeadingSeps(path: []const u8) []const u8 {
     var i: usize = 0;
-    while (i < path.len and std.fs.path.isSep(path[i])) : (i += 1) {}
+    while (i < path.len and std.Io.Dir.path.isSep(path[i])) : (i += 1) {}
     return path[i..];
 }
 
@@ -31,7 +31,7 @@ fn matchesExcludedPrefix(path: []const u8, excluded: []const u8) bool {
     if (excl_norm.len == 0) return false;
     if (!std.mem.startsWith(u8, path_norm, excl_norm)) return false;
     if (path_norm.len == excl_norm.len) return true;
-    return std.fs.path.isSep(path_norm[excl_norm.len]);
+    return std.Io.Dir.path.isSep(path_norm[excl_norm.len]);
 }
 
 test "exclusions table" {
@@ -68,7 +68,7 @@ test "exclusions respect native path separators" {
     const exclusions = Exclusions{
         .haystack = &[_][]const u8{"proc"},
     };
-    if (std.fs.path.sep == '/') {
+    if (std.Io.Dir.path.sep == '/') {
         try std.testing.expect(exclusions.probe("proc/1"));
         try std.testing.expect(!exclusions.probe("proc\\1"));
     } else {

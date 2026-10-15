@@ -20,7 +20,7 @@ pub const default_exclusions = lib.Exclusions{
 pub fn buildExclusions(arena: std.mem.Allocator, io: std.Io) std.mem.Allocator.Error!lib.Exclusions {
     var list: std.ArrayList([]const u8) = .empty;
     try list.appendSlice(arena, &default_exclusion_paths);
-    if (builtin.os.tag == .linux) {
+    if (builtin.target.os.tag == .linux) {
         appendTmpfsMountPoints(arena, io, &list) catch |err| switch (err) {
             error.OutOfMemory => return error.OutOfMemory,
             else => {},
@@ -54,7 +54,7 @@ fn appendTmpfsMountPointsFrom(
     var lines = std.mem.splitScalar(u8, content, '\n');
     while (lines.next()) |line| {
         if (line.len == 0) continue;
-        const dash = std.mem.indexOf(u8, line, " - ") orelse continue;
+        const dash = std.mem.find(u8, line, " - ") orelse continue;
         var right = std.mem.tokenizeScalar(u8, line[dash + 3 ..], ' ');
         const fstype = right.next() orelse continue;
         if (!std.mem.eql(u8, fstype, "tmpfs")) continue;
@@ -116,7 +116,7 @@ fn isFdQuotaExceeded(err: anyerror) bool {
 }
 
 fn softNofileLimit() ?usize {
-    if (builtin.os.tag == .windows) return null;
+    if (builtin.target.os.tag == .windows) return null;
     const lim = std.posix.getrlimit(.NOFILE) catch return null;
     return std.math.cast(usize, lim.cur);
 }
@@ -152,7 +152,7 @@ fn overflowCap(jobs: usize, budget_max: usize) usize {
 }
 
 fn cloneDir(io: std.Io, dir: std.Io.Dir) std.Io.Dir.OpenError!std.Io.Dir {
-    if (builtin.os.tag == .windows) {
+    if (builtin.target.os.tag == .windows) {
         return dir.openDir(io, ".", open_options);
     } else {
         const fd = std.c.dup(dir.handle);
@@ -165,7 +165,7 @@ fn joinRelPath(gpa: std.mem.Allocator, parent: []const u8, name: []const u8) std
     if (parent.len == 0) return gpa.dupe(u8, name);
     const out = try gpa.alloc(u8, parent.len + 1 + name.len);
     @memcpy(out[0..parent.len], parent);
-    out[parent.len] = std.fs.path.sep;
+    out[parent.len] = std.Io.Dir.path.sep;
     @memcpy(out[parent.len + 1 ..][0..name.len], name);
     return out;
 }
@@ -174,14 +174,14 @@ fn joinRelPath(gpa: std.mem.Allocator, parent: []const u8, name: []const u8) std
 /// Used so exclusion probes see absolute paths (avoids matching `~/tmp` to `/tmp`).
 fn absoluteUnderRoot(root_abs: []const u8, rel: []const u8, buf: []u8) error{NameTooLong}![]const u8 {
     if (rel.len == 0) return root_abs;
-    const need_sep = root_abs.len == 0 or !std.fs.path.isSep(root_abs[root_abs.len - 1]);
+    const need_sep = root_abs.len == 0 or !std.Io.Dir.path.isSep(root_abs[root_abs.len - 1]);
     const sep_len: usize = if (need_sep) 1 else 0;
     const total = root_abs.len + sep_len + rel.len;
     if (total > buf.len) return error.NameTooLong;
     @memcpy(buf[0..root_abs.len], root_abs);
     var i = root_abs.len;
     if (need_sep) {
-        buf[i] = std.fs.path.sep;
+        buf[i] = std.Io.Dir.path.sep;
         i += 1;
     }
     @memcpy(buf[i..][0..rel.len], rel);
@@ -445,7 +445,7 @@ const WalkCtx = struct {
         child_path: []const u8,
         overflow: *std.ArrayList(DirJob),
     ) ?std.Io.Dir {
-        const basename = std.fs.path.basename(child_path);
+        const basename = std.Io.Dir.path.basename(child_path);
         while (true) {
             if (!self.acquireForOpen(overflow)) return null;
             const child_dir = parent.openDir(
@@ -709,7 +709,7 @@ pub fn walkParallel(
 }
 
 test "ensureRootAllowed rejects excluded absolute roots" {
-    if (builtin.os.tag != .linux) return;
+    if (builtin.target.os.tag != .linux) return;
     const io = std.testing.io;
 
     var proc_dir = std.Io.Dir.cwd().openDir(io, "/proc", open_options) catch return;
@@ -754,7 +754,7 @@ test "appendTmpfsMountPointsFrom collects tmpfs targets" {
 }
 
 test "buildExclusions includes Linux tmpfs mounts" {
-    if (builtin.os.tag != .linux) return;
+    if (builtin.target.os.tag != .linux) return;
     const io = std.testing.io;
     var arena_state = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena_state.deinit();
@@ -771,7 +771,7 @@ test "buildExclusions includes Linux tmpfs mounts" {
 
 test "absoluteUnderRoot joins root and relative path" {
     var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
-    if (std.fs.path.sep == '/') {
+    if (std.Io.Dir.path.sep == '/') {
         try std.testing.expectEqualStrings("/", try absoluteUnderRoot("/", "", &buf));
         try std.testing.expectEqualStrings("/proc", try absoluteUnderRoot("/", "proc", &buf));
         try std.testing.expectEqualStrings("/home/u/tmp", try absoluteUnderRoot("/home/u", "tmp", &buf));
@@ -785,7 +785,7 @@ test "absoluteUnderRoot joins root and relative path" {
 test "absolute exclusion does not match same basename under another root" {
     var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const exclusions = lib.Exclusions{ .haystack = &[_][]const u8{"/tmp"} };
-    if (std.fs.path.sep != '/') return;
+    if (std.Io.Dir.path.sep != '/') return;
 
     const under_home = try absoluteUnderRoot("/home/user", "tmp", &buf);
     try std.testing.expect(!exclusions.probe(under_home));

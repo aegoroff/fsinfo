@@ -8,7 +8,7 @@ A non-interactive file system information tool implemented in Zig. It walks a di
 
 | Item | Value |
 |------|-------|
-| Language | Zig **0.16.0** (see `mise.toml`) |
+| Language | Zig **0.17.0** (see `mise.toml`) |
 | CLI parsing | [zig-cli](https://github.com/zig-utils/zig-cli) |
 | License | MIT |
 
@@ -25,7 +25,7 @@ A non-interactive file system information tool implemented in Zig. It walks a di
 
 ## Build and run
 
-Use **mise** to pin the Zig version, or install Zig 0.16.0 manually.
+Use **mise** to pin the Zig version, or install Zig 0.17.0 manually.
 
 ```bash
 # Standard local build
@@ -41,13 +41,13 @@ zig build run -- .
 zig build archive -Dversion=0.1.2
 
 # Cross-compile example
-zig build -Dtarget=x86_64-linux-musl -Doptimize=ReleaseFast
+zig build -Dtarget=x86_64-linux-musl -Doptimize=fast
 ```
 
 Via **just** (uses mise for Zig; CI uses the same recipes):
 
 ```bash
-just build                                                      # ReleaseFast, x86_64-linux-musl, core2
+just build                                                      # optimize=fast, x86_64-linux-musl, core2
 just test
 just arch=x86_64 os=linux abi=musl ver=0.3.0 cpu=core2 release
 just ver=0.3.0 build-all                                        # all CI targets + archives
@@ -62,7 +62,7 @@ Binary output: `zig-out/bin/fsinfo` (or custom prefix from `--prefix-exe-dir`).
 - **Minimize scope.** Small, focused diffs. No drive-by refactors.
 - **Match existing style.** Follow patterns in existing `src/*.zig` modules for naming, error handling, and allocator use.
 - **Use std library first.** Avoid adding dependencies without discussion.
-- **I/O.** This codebase uses Zig 0.16 `std.Io` APIs (`init.io`, `std.Io.File`, `std.Io.Dir`, `std.Io.Clock`, `std.Io.Writer`). Do not revert to pre-0.16 file APIs.
+- **I/O.** This codebase uses Zig 0.17 `std.Io` APIs (`init.io`, `std.Io.File`, `std.Io.Dir`, `std.Io.Clock`, `std.Io.Writer`). Prefer `std.Io.Dir.path` over deprecated `std.fs.path`.
 - **Comments.** Only for non-obvious logic; the code should read clearly on its own.
 - **Tests.** Add `test` blocks in the same file as the code under test. Run `zig build test` before finishing.
 - **Format.** Apply `zig fmt` to changed Zig files before finishing.
@@ -124,7 +124,7 @@ feat: human-readable size in reporter
 fix: skip unreadable entries without aborting walk
 chore: readme corrected
 ci: migration to mise
-build: zig 0.16
+build: zig 0.17
 refactor: pass walker entry by reference
 ```
 
@@ -135,7 +135,7 @@ refactor: pass walker entry by reference
 ## Security
 
 - Never commit secrets, tokens, or credentials.
-- Treat user-supplied paths carefully; prefer `std.Io.Dir` / path helpers over ad-hoc string concatenation when opening or joining paths.
+- Treat user-supplied paths carefully; prefer `std.Io.Dir` / `std.Io.Dir.path` helpers over ad-hoc string concatenation when opening or joining paths.
 
 ## What agents should avoid
 
@@ -153,4 +153,4 @@ Before considering a task done:
 1. `zig build` succeeds.
 2. `zig build test` passes.
 3. Changed Zig sources are formatted with `zig fmt`.
-4. No new compiler warnings in ReleaseFast (CI default).
+4. No new compiler warnings in `-Doptimize=fast` (CI default).

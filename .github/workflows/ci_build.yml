@@ -61,7 +61,7 @@ jobs:
             echo "version=0.3.0-dev" >> "$GITHUB_OUTPUT"
           fi
       - name: Install mise and tools
-        uses: jdx/mise-action@v4
+        uses: jdx/mise-action@v5
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
