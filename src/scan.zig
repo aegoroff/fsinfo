@@ -80,10 +80,12 @@ fn unescapeMountPath(arena: std.mem.Allocator, escaped: []const u8) std.mem.Allo
             const d1 = escaped[i + 2];
             const d2 = escaped[i + 3];
             if (d0 >= '0' and d0 <= '7' and d1 >= '0' and d1 <= '7' and d2 >= '0' and d2 <= '7') {
-                const value: u8 = @intCast((d0 - '0') * 64 + (d1 - '0') * 8 + (d2 - '0'));
-                try out.append(arena, value);
-                i += 4;
-                continue;
+                const value = @as(u16, d0 - '0') * 64 + @as(u16, d1 - '0') * 8 + (d2 - '0');
+                if (value <= std.math.maxInt(u8)) {
+                    try out.append(arena, @intCast(value));
+                    i += 4;
+                    continue;
+                }
             }
         }
         try out.append(arena, escaped[i]);
@@ -729,6 +731,12 @@ test "unescapeMountPath decodes octal escapes" {
     const path = try unescapeMountPath(std.testing.allocator, "/run/with\\040space");
     defer std.testing.allocator.free(path);
     try std.testing.expectEqualStrings("/run/with space", path);
+}
+
+test "unescapeMountPath keeps out-of-range octal escapes literal" {
+    const path = try unescapeMountPath(std.testing.allocator, "/a\\777b\\400");
+    defer std.testing.allocator.free(path);
+    try std.testing.expectEqualStrings("/a\\777b\\400", path);
 }
 
 test "appendTmpfsMountPointsFrom collects tmpfs targets" {
