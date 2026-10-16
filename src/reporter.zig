@@ -7,6 +7,8 @@ pub const Reporter = struct {
     total_size: std.atomic.Value(u64),
     total_file_count: std.atomic.Value(u64),
     total_dir_count: std.atomic.Value(u64),
+    /// Entries that could not be read or classified; totals above are a lower bound.
+    skipped_count: std.atomic.Value(u64),
     /// Next file count that should refresh progress UI (claimed via CAS).
     next_progress_at: std.atomic.Value(u64),
     progress: std.Progress.Node,
@@ -30,6 +32,7 @@ pub const Reporter = struct {
             .total_size = .init(0),
             .total_file_count = .init(0),
             .total_dir_count = .init(0),
+            .skipped_count = .init(0),
             .next_progress_at = .init(progress_portion),
             .progress = progress,
             .directories_progress = directories_progress,
@@ -44,6 +47,14 @@ pub const Reporter = struct {
 
     pub fn addDir(self: *Reporter) void {
         _ = self.total_dir_count.fetchAdd(1, .monotonic);
+    }
+
+    pub fn addSkipped(self: *Reporter) void {
+        self.addSkippedCount(1);
+    }
+
+    pub fn addSkippedCount(self: *Reporter, n: u64) void {
+        _ = self.skipped_count.fetchAdd(n, .monotonic);
     }
 
     pub fn addFile(self: *Reporter, size: u64) void {
@@ -93,6 +104,7 @@ pub const Reporter = struct {
                     entry.basename,
                     .{ .follow_symlinks = false },
                 ) catch |err| {
+                    self.addSkipped();
                     if (self.verbose) {
                         std.log.warn("skip statFile {s}: {s}", .{ entry.path, @errorName(err) });
                     }
@@ -103,6 +115,7 @@ pub const Reporter = struct {
             std.Io.File.Kind.directory => {
                 self.addDir();
             },
+            .unknown => self.addSkipped(),
             else => {},
         }
         self.maybeRefreshProgress();
@@ -139,6 +152,14 @@ pub const Reporter = struct {
         ) catch {};
         duration.format(writer) catch {};
         writer.print("\n", .{}) catch {};
+
+        const skipped = self.skipped_count.load(.monotonic);
+        if (skipped > 0) {
+            writer.print("{s:<19} {f} (totals are a lower bound; use --verbose for details)\n", .{
+                "Skipped entries:",
+                grouped_int.fmt(skipped),
+            }) catch {};
+        }
     }
 };
 
