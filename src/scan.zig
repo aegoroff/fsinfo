@@ -145,6 +145,12 @@ fn queueCapacity(jobs: usize, budget_max: usize, overflow_cap: usize) usize {
     );
 }
 
+/// Each worker can pin a directory FD, a parked overflow job and an in-progress open;
+/// with fewer than ~3 FDs per worker every slot can be held by a waiting worker (deadlock).
+fn usableJobs(jobs: usize, budget_max: usize) usize {
+    return @min(jobs, (budget_max -| 1) / 3);
+}
+
 fn overflowCap(jobs: usize, budget_max: usize) usize {
     // Keep overflow small enough that jobs * (1 + cap) fits in roughly half the budget.
     const half = budget_max / 2;
@@ -661,16 +667,19 @@ pub fn walkParallel(
     dir: std.Io.Dir,
     exclusions: lib.Exclusions,
     rep: *reporter.Reporter,
-    jobs: usize,
+    requested_jobs: usize,
     verbose: bool,
 ) (std.mem.Allocator.Error || std.Io.ConcurrentError || std.Io.Dir.OpenError || std.Io.Dir.RealPathError)!void {
-    std.debug.assert(jobs >= 2);
+    std.debug.assert(requested_jobs >= 2);
+
+    const budget_max = dirFdBudget(requested_jobs);
+    const jobs = usableJobs(requested_jobs, budget_max);
+    if (jobs < 2) return walk(io, gpa, dir, exclusions, rep, verbose);
 
     var root_abs_buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
     const root_abs_len = try dir.realPath(io, &root_abs_buf);
     const root_abs = root_abs_buf[0..root_abs_len];
 
-    const budget_max = dirFdBudget(jobs);
     const overflow_cap = overflowCap(jobs, budget_max);
     const capacity = queueCapacity(jobs, budget_max, overflow_cap);
 
